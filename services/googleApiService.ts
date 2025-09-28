@@ -8,7 +8,7 @@ import { User, AcademicYear, Group, Teacher, Activity, ParticipationRecord } fro
 
 let signedIn = false;
 let authChangeCallback: ((isSignedIn: boolean) => void) | null = null;
-const MOCK_USER_EMAIL = 'admin.user@example.com';
+const MOCK_USER_EMAIL = 'phantrungtuan@gmail.com';
 
 /**
  * Initializes the API client. In a real app, this would load the gapi client.

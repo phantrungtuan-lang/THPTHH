@@ -2,7 +2,7 @@
 import { User, UserRole, AcademicYear, Group, Teacher, Activity, ParticipationStatus, ParticipationRecord } from './types';
 
 export const USERS: User[] = [
-  { id: 'user-admin', name: 'Admin User', email: 'admin.user@example.com', role: UserRole.ADMIN, password: '123' },
+  { id: 'user-admin', name: 'Admin User', email: 'phantrungtuan@gmail.com', role: UserRole.ADMIN, password: '123' },
   { id: 'user-leader-1', name: 'Tổ trưởng Toán', email: 'leader.toan@example.com', role: UserRole.GROUP_LEADER, groupId: 'group-1', password: '123' },
   { id: 'user-leader-2', name: 'Tổ trưởng Văn', email: 'leader.van@example.com', role: UserRole.GROUP_LEADER, groupId: 'group-2', password: '123' },
   { id: 'user-teacher-1', name: 'Nguyễn Văn A', email: 'teacher.a@example.com', role: UserRole.TEACHER, groupId: 'group-1', password: '123' },
