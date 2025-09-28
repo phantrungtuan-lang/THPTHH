@@ -137,10 +137,9 @@ const App: React.FC = () => {
           return newItem;
       },
       update: async (updatedItem: T) => {
+          // Destructure to separate id from the rest of the payload.
+          // This is crucial as the primary key should not be in the update payload.
           const { id, ...updatePayload } = updatedItem;
-          // Fix: Cast `updatePayload` to `Partial<T>` because TypeScript cannot infer
-          // that `Omit<T, 'id'>` is assignable to `Partial<T>` for a generic T.
-          // This is a safe cast as `updatePayload` is a valid partial object for an update.
           await api.update<T>(tableName, id, updatePayload as Partial<T>);
           setter(state.map(item => item.id === updatedItem.id ? updatedItem : item));
       },

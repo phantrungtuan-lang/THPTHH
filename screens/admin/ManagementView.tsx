@@ -61,13 +61,14 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             delete dataToSubmit.password;
         }
 
-        // Convert empty string foreign keys to null before submission
-        if (modal.type === 'user' && dataToSubmit.groupId === '') {
-            dataToSubmit.groupId = null;
-        }
-        if (modal.type === 'group' && dataToSubmit.leaderId === '') {
-            dataToSubmit.leaderId = null;
-        }
+        // --- FIX: Convert all potential empty string foreign keys to null ---
+        // This is crucial because a "" value is invalid for a foreign key column in the database.
+        const foreignKeyFields: (keyof typeof dataToSubmit)[] = ['groupId', 'leaderId', 'academicYearId'];
+        foreignKeyFields.forEach(field => {
+            if (dataToSubmit[field] === '') {
+                dataToSubmit[field] = null;
+            }
+        });
 
 
         switch (modal.type) {
