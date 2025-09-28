@@ -1,103 +1,107 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Dashboard } from './screens/Dashboard';
 import { User, AcademicYear, Group, Teacher, Activity, ParticipationRecord, UserRole } from './types';
-import * as api from './services/googleApiService';
+import * as api from './services/supabaseService';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
+import { Session } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
-  const [isApiReady, setIsApiReady] = useState(false);
-  const [isSignedIn, setIsSignedIn] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
   const [users, setUsers] = useState<User[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [participationRecords, setParticipationRecords] = useState<ParticipationRecord[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
   const [passwordModal, setPasswordModal] = useState<{ isOpen: boolean; user: User | null; mode: 'change' | 'reset' }>({ isOpen: false, user: null, mode: 'change' });
 
+  useEffect(() => {
+    api.onAuthStateChange((_event, session) => {
+      setSession(session);
+      // Mark auth as ready once we get the first auth event
+      if (!authReady) {
+        setAuthReady(true);
+      }
+    });
+  }, [authReady]);
+
   const loadAllData = useCallback(async () => {
+    if (!session?.user?.email) {
+        setCurrentUser(null);
+        setIsLoading(false);
+        return;
+    }
+    
     setIsLoading(true);
+
+    // First, fetch the user's profile based on their email
+    const userProfile = await api.getUserProfile(session.user.email);
+    setCurrentUser(userProfile);
+
+    // If user has no profile, they are not authorized.
+    if (!userProfile) {
+      setIsLoading(false);
+      return;
+    }
+    
+    // If user is authorized, fetch all other data
     const [
       loadedUsers,
       loadedAcademicYears,
       loadedGroups,
-      loadedTeachers,
       loadedActivities,
       loadedParticipationRecords,
     ] = await Promise.all([
       api.getUsers(),
       api.getAcademicYears(),
       api.getGroups(),
-      api.getTeachers(),
       api.getActivities(),
       api.getParticipationRecords(),
     ]);
     setUsers(loadedUsers);
     setAcademicYears(loadedAcademicYears);
     setGroups(loadedGroups);
-    setTeachers(loadedTeachers);
+    // Teachers are now part of the users table.
     setActivities(loadedActivities);
     setParticipationRecords(loadedParticipationRecords);
     
-    // Find the user profile that matches the signed-in Google account email.
-    const googleUserEmail = api.getSignedInUserEmail();
-    console.log("Google User Email:", googleUserEmail);
-
-    if (googleUserEmail) {
-        const userProfile = loadedUsers.find(u => u.email?.toLowerCase() === googleUserEmail.toLowerCase());
-        setCurrentUser(userProfile || null);
-    } else {
-        setCurrentUser(null);
-    }
-    
     setIsLoading(false);
-  }, []);
+  }, [session]);
 
   useEffect(() => {
-    const handleAuthChange = async (signedIn: boolean) => {
-      setIsSignedIn(signedIn);
-      if (signedIn) {
-        await loadAllData();
-      } else {
-        setCurrentUser(null);
+      if (authReady) {
+          loadAllData();
       }
-    };
-    
-    api.initClient(handleAuthChange).then(() => {
-      setIsApiReady(true);
-      const wasSignedIn = api.isSignedIn();
-      handleAuthChange(wasSignedIn);
-    });
-  }, [loadAllData]);
+  }, [session, authReady, loadAllData]);
   
-  const handleLogin = () => api.signIn();
-  const handleLogout = () => {
-      api.signOut();
+  const handleLogin = () => api.signInWithGoogle();
+  const handleLogout = async () => {
+      await api.signOut();
+      setCurrentUser(null);
       // Clear all local state
       setUsers([]);
       setAcademicYears([]);
       setGroups([]);
-      setTeachers([]);
       setActivities([]);
       setParticipationRecords([]);
-      setCurrentUser(null);
   };
   
   // Handlers
   const handlePasswordChange = async (userId: string, newPassword: string): Promise<{ success: boolean, message?: string }> => {
-      const userToUpdate = users.find(u => u.id === userId);
-      if (!userToUpdate) return { success: false, message: "User not found." };
-      
-      const updatedUsers = users.map(u => u.id === userId ? { ...u, password: newPassword } : u);
-      await api.updateUsers(updatedUsers);
-      setUsers(updatedUsers);
-      return { success: true };
+      try {
+          await api.updateUser(userId, { password: newPassword });
+          // We need to refresh the local state
+          const newUsers = users.map(u => u.id === userId ? { ...u, password: newPassword } : u);
+          setUsers(newUsers);
+          return { success: true };
+      } catch (error: any) {
+          return { success: false, message: error.message };
+      }
   };
 
   const openPasswordModal = (user: User, mode: 'change' | 'reset') => setPasswordModal({ isOpen: true, user, mode });
@@ -105,59 +109,36 @@ const App: React.FC = () => {
 
   // Generic handler creator
   const createHandlers = <T extends {id: string}>(
-      state: T[],
-      setter: React.Dispatch<React.SetStateAction<T[]>>,
-      updater: (data: T[]) => Promise<any>
+    tableName: string,
+    state: T[],
+    setter: React.Dispatch<React.SetStateAction<T[]>>,
   ) => ({
       add: async (item: Omit<T, 'id'>) => {
-          const newItem = { ...item, id: `${Date.now()}` } as T;
-          const newState = [...state, newItem];
-          await updater(newState);
-          setter(newState);
+          const newItem = await api.add<T>(tableName, item);
+          setter([...state, newItem]);
           return newItem;
       },
       update: async (updatedItem: T) => {
-          const newState = state.map(item => item.id === updatedItem.id ? updatedItem : item);
-          await updater(newState);
-          setter(newState);
+          await api.update<T>(tableName, updatedItem.id, updatedItem);
+          setter(state.map(item => item.id === updatedItem.id ? updatedItem : item));
       },
       remove: async (id: string) => {
-          const newState = state.filter(item => item.id !== id);
-          await updater(newState);
-          setter(newState);
+          await api.remove(tableName, id);
+          setter(state.filter(item => item.id !== id));
       },
   });
 
-  // Specific handlers with cascading logic
-  const activityHandlers = {
-      ...createHandlers(activities, setActivities, api.updateActivities),
-      remove: async (id: string) => {
-          const newActivities = activities.filter(a => a.id !== id);
-          const newParticipationRecords = participationRecords.filter(pr => pr.activityId !== id);
-          await Promise.all([
-              api.updateActivities(newActivities),
-              api.updateParticipationRecords(newParticipationRecords),
-          ]);
-          setActivities(newActivities);
-          setParticipationRecords(newParticipationRecords);
-      }
+  const getTeachersFromUsers = (currentUsers: User[]) => {
+      return currentUsers
+        .filter(u => u.role === UserRole.TEACHER || u.role === UserRole.GROUP_LEADER)
+        .map(u => ({ id: u.id, name: u.name, groupId: u.groupId || '' }));
   };
-    
+
+  // Specific handlers with cascading logic
   const userHandlers = {
       add: async (item: Omit<User, 'id' | 'password'> & {password?: string}) => {
-          const newUser = { ...item, password: item.password || '123', id: `user-${Date.now()}` } as User;
-          const newUsers = [...users, newUser];
-          let newTeachers = [...teachers];
-
-          if(item.role === UserRole.TEACHER || item.role === UserRole.GROUP_LEADER) {
-            newTeachers.push({ name: item.name, groupId: item.groupId || '', id: newUser.id });
-          }
-          await Promise.all([
-            api.updateUsers(newUsers),
-            api.updateTeachers(newTeachers)
-          ]);
-          setUsers(newUsers);
-          setTeachers(newTeachers);
+          const newUser = await api.addUser({ ...item, password: item.password || '123' });
+          setUsers([...users, newUser]);
           return newUser;
       },
       update: async (updatedItem: User) => {
@@ -168,104 +149,48 @@ const App: React.FC = () => {
             ...updatedItem,
             password: updatedItem.password ? updatedItem.password : originalUser.password,
         };
-        const newUsers = users.map(user => user.id === updatedItem.id ? finalUpdatedItem : user);
-
-        const isTeacherOrLeader = (role: UserRole) => role === UserRole.TEACHER || role === UserRole.GROUP_LEADER;
-        const wasTeacher = isTeacherOrLeader(originalUser.role);
-        const isNowTeacher = isTeacherOrLeader(finalUpdatedItem.role);
-
-        let newTeachers = [...teachers];
-        if (!wasTeacher && isNowTeacher) {
-            newTeachers.push({ id: finalUpdatedItem.id, name: finalUpdatedItem.name, groupId: finalUpdatedItem.groupId || '' });
-        } else if (wasTeacher && !isNowTeacher) {
-            newTeachers = newTeachers.filter(t => t.id !== updatedItem.id);
-        } else if (wasTeacher && isNowTeacher) {
-            newTeachers = newTeachers.map(t =>
-                t.id === updatedItem.id
-                    ? { ...t, name: finalUpdatedItem.name, groupId: finalUpdatedItem.groupId || '' }
-                    : t
-            );
-        }
-
-        await Promise.all([
-            api.updateUsers(newUsers),
-            api.updateTeachers(newTeachers)
-        ]);
-        setUsers(newUsers);
-        setTeachers(newTeachers);
+        await api.updateUser(finalUpdatedItem.id, finalUpdatedItem);
+        setUsers(users.map(user => user.id === updatedItem.id ? finalUpdatedItem : user));
       },
+      // Note: Supabase foreign key constraints with cascades will handle most deletions.
+      // Manual cleanup might be needed for complex cases not handled by DB schema.
       remove: async (id: string) => {
-        const newUsers = users.filter(u => u.id !== id);
-        const newTeachers = teachers.filter(t => t.id !== id);
-        const newGroups = groups.map(g => g.leaderId === id ? { ...g, leaderId: '' } : g);
-        const newParticipationRecords = participationRecords.filter(pr => pr.teacherId !== id);
-
-        await Promise.all([
-            api.updateUsers(newUsers),
-            api.updateTeachers(newTeachers),
-            api.updateGroups(newGroups),
-            api.updateParticipationRecords(newParticipationRecords)
-        ]);
-        setUsers(newUsers);
-        setTeachers(newTeachers);
-        setGroups(newGroups);
-        setParticipationRecords(newParticipationRecords);
+        await api.removeUser(id);
+        setUsers(users.filter(u => u.id !== id));
+        // Refresh other related data if necessary, though cascades should handle it.
+        await loadAllData(); 
       }
   };
-
-  const groupHandlers = {
-      ...createHandlers(groups, setGroups, api.updateGroups),
-      remove: async (id: string) => {
-          const teachersInGroup = teachers.filter(t => t.groupId === id);
-          const teacherIdsInGroup = new Set(teachersInGroup.map(t => t.id));
-          
-          const newGroups = groups.filter(g => g.id !== id);
-          const newTeachers = teachers.filter(t => t.groupId !== id);
-          const newUsers = users.filter(u => !teacherIdsInGroup.has(u.id));
-          const newParticipationRecords = participationRecords.filter(pr => !teacherIdsInGroup.has(pr.teacherId));
-
-          await Promise.all([
-            api.updateGroups(newGroups),
-            api.updateTeachers(newTeachers),
-            api.updateUsers(newUsers),
-            api.updateParticipationRecords(newParticipationRecords)
-          ]);
-
-          setGroups(newGroups);
-          setTeachers(newTeachers);
-          setUsers(newUsers);
-          setParticipationRecords(newParticipationRecords);
-      }
+  
+  const activityHandlers = createHandlers('activities', activities, setActivities);
+  const academicYearHandlers = createHandlers('academic_years', academicYears, setAcademicYears);
+  const groupHandlers = createHandlers('groups', groups, setGroups);
+  
+  // Teacher data is derived from users, so handler is different
+  const teacherHandlers = {
+      update: userHandlers.update,
+      remove: userHandlers.remove
   };
 
   const participationRecordHandlers = {
-      updateBatch: async (activityId: string, newRecordsForActivity: ParticipationRecord[]) => {
-          const otherRecords = participationRecords.filter(pr => pr.activityId !== activityId);
-          const allNewRecords = [...otherRecords, ...newRecordsForActivity];
-          await api.updateParticipationRecords(allNewRecords);
-          setParticipationRecords(allNewRecords);
+      updateBatch: async (activityId: string, newRecordsForActivity: Omit<ParticipationRecord, 'id'>[]) => {
+          await api.updateParticipationBatch(activityId, newRecordsForActivity);
+          // Refresh data to get new state
+          const loadedParticipationRecords = await api.getParticipationRecords();
+          setParticipationRecords(loadedParticipationRecords);
       }
   };
-
-  // Simplified handlers for entities without complex cascades
-  const academicYearHandlers = createHandlers(academicYears, setAcademicYears, api.updateAcademicYears);
-  const teacherHandlers = {
-       ...createHandlers(teachers, setTeachers, api.updateTeachers),
-       remove: userHandlers.remove // Removing a teacher is same as removing a user
-  };
-
-
-  if (!isApiReady) {
-    return <div className="flex items-center justify-center min-h-screen">Đang khởi tạo API...</div>;
+  
+  if (!authReady) {
+    return <div className="flex items-center justify-center min-h-screen">Đang khởi tạo ứng dụng...</div>;
   }
 
-  if (!isSignedIn) {
+  if (!session) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-100">
         <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-2xl shadow-xl text-center">
             <h1 className="text-3xl font-bold text-indigo-600">Hệ thống Quản lý Hoạt động</h1>
             <p className="mt-2 text-gray-500">Vui lòng đăng nhập bằng tài khoản Google của bạn để tiếp tục.</p>
-            <p className="text-sm text-gray-500">Bạn sẽ cần cấp quyền cho ứng dụng để chỉnh sửa các trang tính liên quan đến ứng dụng này.</p>
             <button onClick={handleLogin} className="w-full flex items-center justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
               <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" /></svg>
               Đăng nhập bằng Google
@@ -276,7 +201,7 @@ const App: React.FC = () => {
   }
 
   if (isLoading) {
-      return <div className="flex items-center justify-center min-h-screen">Đang tải dữ liệu từ Google Sheets...</div>;
+      return <div className="flex items-center justify-center min-h-screen">Đang tải dữ liệu...</div>;
   }
   
   if (!currentUser) {
@@ -285,7 +210,7 @@ const App: React.FC = () => {
           <div>
             <h2 className="text-2xl font-bold text-red-600">Truy cập bị từ chối</h2>
             <p className="text-gray-700 mt-2 max-w-md">
-              Tài khoản Google của bạn chưa được cấp quyền truy cập hệ thống. Vui lòng liên hệ quản trị viên để được thêm vào danh sách người dùng.
+              Tài khoản Google của bạn (`{session.user.email}`) chưa được cấp quyền truy cập hệ thống. Vui lòng liên hệ quản trị viên để được thêm vào danh sách người dùng.
             </p>
             <button onClick={handleLogout} className="mt-6 px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
               Đăng xuất
@@ -302,7 +227,7 @@ const App: React.FC = () => {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Dashboard
             currentUser={currentUser}
-            data={{ users, academicYears, groups, teachers, activities, participationRecords }}
+            data={{ users, academicYears, groups, teachers: getTeachersFromUsers(users), activities, participationRecords }}
             handlers={{ userHandlers, academicYearHandlers, groupHandlers, teacherHandlers, activityHandlers, participationRecordHandlers, requestPasswordReset: (user: User) => openPasswordModal(user, 'reset') }}
           />
         </div>
@@ -313,7 +238,6 @@ const App: React.FC = () => {
             onClose={closePasswordModal}
             user={passwordModal.user}
             mode={passwordModal.mode}
-            // Password change now only takes new password as old password is not verifiable client-side
             onSubmit={(userId, newPass) => handlePasswordChange(userId, newPass)}
         />
       )}

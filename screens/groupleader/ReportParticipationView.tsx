@@ -49,8 +49,8 @@ export const ReportParticipationView: React.FC<ReportParticipationViewProps> = (
     if (isSaving) return;
     setIsSaving(true);
     
-    const newRecords: ParticipationRecord[] = Object.entries(statuses).map(([teacherId, status]) => ({
-        id: `pr-${teacherId}-${selectedActivityId}-${Math.random()}`,
+    // Prepare records without the 'id' field, as Supabase will generate it.
+    const newRecords: Omit<ParticipationRecord, 'id'>[] = Object.entries(statuses).map(([teacherId, status]) => ({
         teacherId,
         activityId: selectedActivityId,
         status,

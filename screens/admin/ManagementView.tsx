@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card } from '../../components/Card';
 import { Modal } from '../../components/Modal';
@@ -37,7 +36,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
 
     const openModal = (type: ModalState['type'], mode: ModalState['mode'], data?: any) => {
         setModal({ type, mode, data });
-        setFormData(data || {});
+        setFormData(data || { role: UserRole.TEACHER }); // Default role to Teacher when adding a user
     };
     const closeModal = () => {
         setModal(null);
@@ -55,39 +54,28 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
         setIsSaving(true);
 
         let handler;
+        let dataToSubmit = { ...formData };
+        if (modal.type === 'user' && !dataToSubmit.password) {
+            delete dataToSubmit.password;
+        }
+
         switch (modal.type) {
-            case 'user':
-                handler = handlers.userHandlers;
-                break;
-            case 'group':
-                handler = handlers.groupHandlers;
-                break;
-            case 'teacher':
-                handler = handlers.teacherHandlers;
-                break;
-            case 'year':
-                handler = handlers.academicYearHandlers;
-                break;
-            case 'activity':
-                handler = handlers.activityHandlers;
-                break;
+            case 'user': handler = handlers.userHandlers; break;
+            case 'group': handler = handlers.groupHandlers; break;
+            case 'teacher': handler = handlers.teacherHandlers; break; // Uses userHandlers underneath
+            case 'year': handler = handlers.academicYearHandlers; break;
+            case 'activity': handler = handlers.activityHandlers; break;
             default:
                 console.error('Unknown modal type:', modal.type);
                 setIsSaving(false);
                 return;
         }
 
-        if (!handler) {
-            console.error('Handler not found for type:', modal.type);
-            setIsSaving(false);
-            return;
-        }
-
         try {
             if (modal.mode === 'add') {
-                await handler.add(formData);
+                await handler.add(dataToSubmit);
             } else {
-                await handler.update(formData);
+                await handler.update(dataToSubmit);
             }
         } catch (error) {
             console.error("Failed to save data:", error);
@@ -116,11 +104,9 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                     <InputField name="name" label="Tên tổ" value={formData.name || ''} onChange={handleFormChange} required/>
                     <SelectField name="leaderId" label="Tổ trưởng" value={formData.leaderId || ''} onChange={handleFormChange} options={data.users.filter(u => u.role === UserRole.TEACHER || u.role === UserRole.GROUP_LEADER).map(t => ({value: t.id, label: t.name}))} required/>
                  </>;
-            case 'teacher':
-                 return <>
-                    <InputField name="name" label="Tên giáo viên" value={formData.name || ''} onChange={handleFormChange} required/>
-                    <SelectField name="groupId" label="Tổ chuyên môn" value={formData.groupId || ''} onChange={handleFormChange} options={data.groups.map(g => ({value: g.id, label: g.name}))} required/>
-                 </>;
+            // "teacher" form is handled by "user" form now.
+            case 'teacher': 
+                 return <p>Vui lòng chỉnh sửa thông tin giáo viên thông qua mục 'Tài khoản'.</p>
             case 'year':
                 return <InputField name="name" label="Tên năm học (VD: 2024-2025)" value={formData.name || ''} onChange={handleFormChange} required/>;
             case 'activity':
@@ -162,7 +148,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                         <ItemRow 
                             key={user.id} 
                             name={`${user.name} (${user.role})`} 
-                            onEdit={!isCurrentUser ? () => openModal('user', 'edit', user) : undefined} 
+                            onEdit={() => openModal('user', 'edit', user)} 
                             onDelete={!isCurrentUser ? () => handlers.userHandlers.remove(user.id) : undefined}
                             onResetPassword={!isCurrentUser ? () => handlers.requestPasswordReset(user) : undefined}
                         />
@@ -173,13 +159,21 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                 {data.groups.map(group => <ItemRow key={group.id} name={group.name} onEdit={() => openModal('group', 'edit', group)} onDelete={() => handlers.groupHandlers.remove(group.id)}/>)}
             </ManagementCard>
              <ManagementCard title="Giáo viên" onAdd={() => alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.")}>
-                {data.teachers.map(teacher => <ItemRow key={teacher.id} name={teacher.name} onEdit={() => openModal('teacher', 'edit', teacher)} onDelete={() => handlers.teacherHandlers.remove(teacher.id)}/>)}
+                {data.teachers.map(teacher => {
+                    const user = data.users.find(u => u.id === teacher.id);
+                    return <ItemRow 
+                        key={teacher.id} 
+                        name={teacher.name} 
+                        onEdit={user ? () => openModal('user', 'edit', user) : undefined} 
+                        onDelete={user ? () => handlers.teacherHandlers.remove(teacher.id) : undefined}
+                    />
+                })}
             </ManagementCard>
             <ManagementCard title="Năm học" onAdd={() => openModal('year', 'add')}>
                 {data.academicYears.map(year => <ItemRow key={year.id} name={year.name} onEdit={() => openModal('year', 'edit', year)} onDelete={() => handlers.academicYearHandlers.remove(year.id)}/>)}
             </ManagementCard>
             <ManagementCard title="Hoạt động" onAdd={() => openModal('activity', 'add')}>
-                 {data.activities.map(activity => <ItemRow key={activity.id} name={`${activity.name} - ${new Date(activity.date).toLocaleDateString('vi-VN')}`} onEdit={() => openModal('activity', 'edit', activity)} onDelete={() => handlers.activityHandlers.remove(activity.id)}/>)}
+                 {data.activities.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(activity => <ItemRow key={activity.id} name={`${activity.name} - ${new Date(activity.date).toLocaleDateString('vi-VN')}`} onEdit={() => openModal('activity', 'edit', activity)} onDelete={() => handlers.activityHandlers.remove(activity.id)}/>)}
             </ManagementCard>
         </div>
     );
@@ -214,7 +208,7 @@ const SelectField: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & {lab
     <div>
         <label className="block text-sm font-medium text-gray-700">{label}</label>
         <select {...props} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-            <option value="" disabled>-- Chọn --</option>
+            <option value="">-- Chọn --</option>
             {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
         </select>
     </div>
