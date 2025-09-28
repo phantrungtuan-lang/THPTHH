@@ -1,5 +1,5 @@
-import { createClient, Session, User as SupabaseUser } from '@supabase/supabase-js';
-import { User, AcademicYear, Group, Activity, ParticipationRecord, UserRole } from '../types';
+import { createClient } from '@supabase/supabase-js';
+import { User, AcademicYear, Group, Activity, ParticipationRecord } from '../types';
 
 // Cấu hình Supabase client với thông tin của bạn
 const SUPABASE_URL = 'https://lkonihsuecirpdluwtuj.supabase.co'; 
@@ -7,49 +7,22 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// --- Authentication Functions ---
-
-export const signInWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-    });
-    if (error) console.error('Error logging in with Google:', error.message);
-};
-
-export const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) console.error('Error logging out:', error.message);
-};
-
-export const getSession = async (): Promise<Session | null> => {
-    const { data } = await supabase.auth.getSession();
-    return data.session;
-};
-
-export const onAuthStateChange = (callback: (event: string, session: Session | null) => void) => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(callback);
-    return subscription;
-};
-
-export const getUserProfile = async (email: string): Promise<User | null> => {
-    const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .single();
-        
-    if (error && error.code !== 'PGRST116') { // PGRST116: single row not found, which is ok
-        console.error('Error fetching user profile:', error);
-        return null;
-    }
-    return data;
-};
-
 // --- Generic Data Functions ---
 
 const handleError = (error: any, context: string) => {
+    const message = error.message || 'An unknown error occurred.';
     console.error(`Error in ${context}:`, error);
-    throw error;
+
+    // Add a developer hint about Row Level Security for SELECT errors, as it's a common issue.
+    if (context.startsWith('getAll') && message.includes('permission denied')) {
+        console.warn(
+            'Supabase RLS Hint: The error "permission denied" often means that Row Level Security (RLS) is enabled on the table, ' +
+            `but there is no policy allowing the 'anon' role to read from the "${context.split(' ')[1]}" table. ` +
+            'You may need to create a SELECT policy for anonymous users in your Supabase dashboard.'
+        );
+    }
+    // Throw a new, cleaner error object that will be caught by the UI layer.
+    throw new Error(message);
 };
 
 export const getAll = async <T>(tableName: string): Promise<T[]> => {

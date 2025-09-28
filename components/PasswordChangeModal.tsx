@@ -46,11 +46,6 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ isOpen
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {mode === 'change' && (
-          <div className="p-3 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700">
-            <p className="text-sm">Lưu ý: Thay đổi mật khẩu ở đây chỉ ảnh hưởng đến việc đăng nhập trong ứng dụng này, không ảnh hưởng đến mật khẩu tài khoản Google của bạn.</p>
-          </div>
-        )}
         <div>
           <label className="block text-sm font-medium text-gray-700">Mật khẩu mới</label>
           <input
