@@ -13,12 +13,19 @@ const handleError = (error: any, context: string) => {
     const message = error.message || 'An unknown error occurred.';
     console.error(`Error in ${context}:`, error);
 
-    // Add a developer hint about Row Level Security for SELECT errors, as it's a common issue.
-    if (context.startsWith('getAll') && message.includes('permission denied')) {
+    // Add a developer hint about Row Level Security, as it's a common issue.
+    if (message.includes('permission denied')) {
+        const operation = context.split(' ')[0].toLowerCase(); // e.g., "getall", "add"
+        const tableName = context.split(' ').pop(); // Gets the last word, likely the table name
+        let policyType = 'READ (SELECT)';
+        if (operation.includes('add')) policyType = 'CREATE (INSERT)';
+        if (operation.includes('update')) policyType = 'UPDATE';
+        if (operation.includes('remove') || operation.includes('delete')) policyType = 'DELETE';
+
         console.warn(
-            'Supabase RLS Hint: The error "permission denied" often means that Row Level Security (RLS) is enabled on the table, ' +
-            `but there is no policy allowing the 'anon' role to read from the "${context.split(' ')[1]}" table. ` +
-            'You may need to create a SELECT policy for anonymous users in your Supabase dashboard.'
+            `Supabase RLS Hint: The error "permission denied" for table "${tableName}" suggests that Row Level Security (RLS) is enabled, ` +
+            `but there is no policy allowing the 'anon' role to perform the '${policyType}' operation. ` +
+            `You may need to create or modify a policy in your Supabase dashboard.`
         );
     }
     // Throw a new, cleaner error object that will be caught by the UI layer.
@@ -32,7 +39,8 @@ export const getAll = async <T>(tableName: string): Promise<T[]> => {
 };
 
 export const add = async <T>(tableName: string, item: Omit<T, 'id'>): Promise<T> => {
-    const { data, error } = await supabase.from(tableName).insert(item).select().single();
+    // Wrap the single item in an array, which is the standard format for insert.
+    const { data, error } = await supabase.from(tableName).insert([item]).select().single();
     if (error) handleError(error, `add to ${tableName}`);
     return data as T;
 };
@@ -68,7 +76,7 @@ export const updateParticipationBatch = async (activityId: string, newRecords: O
         .delete()
         .eq('activityId', activityId);
 
-    if (deleteError) handleError(deleteError, 'updateParticipationBatch (delete)');
+    if (deleteError) handleError(deleteError, `updateParticipationBatch (delete) for activity ${activityId}`);
 
     // 2. Insert the new batch of records
     if (newRecords.length > 0) {
@@ -76,6 +84,6 @@ export const updateParticipationBatch = async (activityId: string, newRecords: O
             .from('participation_records')
             .insert(newRecords);
 
-        if (insertError) handleError(insertError, 'updateParticipationBatch (insert)');
+        if (insertError) handleError(insertError, `updateParticipationBatch (insert) for activity ${activityId}`);
     }
 };
