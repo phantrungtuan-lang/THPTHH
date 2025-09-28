@@ -10,14 +10,16 @@ interface GroupLeaderDashboardProps {
     activities: Activity[];
     teachers: Teacher[];
     participationRecords: ParticipationRecord[];
-    setParticipationRecords: React.Dispatch<React.SetStateAction<ParticipationRecord[]>>;
     academicYears: AcademicYear[];
   };
+  handlers: {
+    participationRecordHandlers: any;
+  }
 }
 
 type GroupLeaderTab = 'report' | 'stats';
 
-export const GroupLeaderDashboard: React.FC<GroupLeaderDashboardProps> = ({ currentUser, data }) => {
+export const GroupLeaderDashboard: React.FC<GroupLeaderDashboardProps> = ({ currentUser, data, handlers }) => {
   const [activeTab, setActiveTab] = useState<GroupLeaderTab>('report');
   const [initialActivityId, setInitialActivityId] = useState<string | null>(null);
 
@@ -29,7 +31,7 @@ export const GroupLeaderDashboard: React.FC<GroupLeaderDashboardProps> = ({ curr
   const renderContent = () => {
     switch (activeTab) {
       case 'report':
-        return <ReportParticipationView currentUser={currentUser} data={data} onReportSaved={handleReportSaved} />;
+        return <ReportParticipationView currentUser={currentUser} data={data} handlers={handlers} onReportSaved={handleReportSaved} />;
       case 'stats':
         return <GroupReportView currentUser={currentUser} data={data} initialActivityId={initialActivityId} resetInitialActivityId={() => setInitialActivityId(null)} />;
       default:

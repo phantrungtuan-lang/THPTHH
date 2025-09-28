@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { User, UserRole, AcademicYear, Group, Teacher, Activity, ParticipationRecord } from '../types';
 import { AdminDashboard } from './admin/AdminDashboard';
@@ -14,7 +13,6 @@ interface DashboardProps {
     teachers: Teacher[];
     activities: Activity[];
     participationRecords: ParticipationRecord[];
-    setParticipationRecords: React.Dispatch<React.SetStateAction<ParticipationRecord[]>>;
   };
   handlers: {
     userHandlers: any;
@@ -22,6 +20,7 @@ interface DashboardProps {
     groupHandlers: any;
     teacherHandlers: any;
     activityHandlers: any;
+    participationRecordHandlers: any;
     requestPasswordReset: (user: User) => void;
   };
 }
@@ -31,7 +30,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentUser, data, handler
     case UserRole.ADMIN:
       return <AdminDashboard currentUser={currentUser} data={data} handlers={handlers} />;
     case UserRole.GROUP_LEADER:
-      return <GroupLeaderDashboard currentUser={currentUser} data={data} />;
+      return <GroupLeaderDashboard currentUser={currentUser} data={data} handlers={handlers} />;
     case UserRole.TEACHER:
       return <TeacherDashboard currentUser={currentUser} data={data} />;
     default:

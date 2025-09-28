@@ -2,34 +2,61 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Dashboard } from './screens/Dashboard';
 import { User, AcademicYear, Group, Teacher, Activity, ParticipationRecord, UserRole } from './types';
-import { USERS, ACADEMIC_YEARS as initialAcademicYears, GROUPS as initialGroups, TEACHERS as initialTeachers, ACTIVITIES as initialActivities, PARTICIPATION_RECORDS as initialParticipationRecords } from './constants';
+import * as sheetService from './services/googleSheetsService';
 import { LoginScreen } from './screens/LoginScreen';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
 
 const App: React.FC = () => {
-  const [users, setUsers] = useState<User[]>(USERS);
-  const [academicYears, setAcademicYears] = useState<AcademicYear[]>(initialAcademicYears);
-  const [groups, setGroups] = useState<Group[]>(initialGroups);
-  const [teachers, setTeachers] = useState<Teacher[]>(initialTeachers);
-  const [activities, setActivities] = useState<Activity[]>(initialActivities);
-  const [participationRecords, setParticipationRecords] = useState<ParticipationRecord[]>(initialParticipationRecords);
+  const [users, setUsers] = useState<User[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [participationRecords, setParticipationRecords] = useState<ParticipationRecord[]>([]);
   
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [passwordModal, setPasswordModal] = useState<{ isOpen: boolean; user: User | null; mode: 'change' | 'reset' }>({ isOpen: false, user: null, mode: 'change' });
 
   useEffect(() => {
-    try {
-      const loggedInUserId = localStorage.getItem('loggedInUserId');
-      if (loggedInUserId) {
-        const user = users.find(u => u.id === loggedInUserId);
-        setCurrentUser(user || null);
+    const loadData = async () => {
+      await sheetService.initializeDatabase();
+      const [
+        loadedUsers,
+        loadedAcademicYears,
+        loadedGroups,
+        loadedTeachers,
+        loadedActivities,
+        loadedParticipationRecords,
+      ] = await Promise.all([
+        sheetService.getUsers(),
+        sheetService.getAcademicYears(),
+        sheetService.getGroups(),
+        sheetService.getTeachers(),
+        sheetService.getActivities(),
+        sheetService.getParticipationRecords(),
+      ]);
+      setUsers(loadedUsers);
+      setAcademicYears(loadedAcademicYears);
+      setGroups(loadedGroups);
+      setTeachers(loadedTeachers);
+      setActivities(loadedActivities);
+      setParticipationRecords(loadedParticipationRecords);
+
+      try {
+        const loggedInUserId = localStorage.getItem('loggedInUserId');
+        if (loggedInUserId) {
+          const user = loadedUsers.find(u => u.id === loggedInUserId);
+          setCurrentUser(user || null);
+        }
+      } catch (error) {
+        console.error("Could not access localStorage:", error);
       }
-    } catch (error) {
-      console.error("Could not access localStorage:", error);
-    }
-    setIsLoading(false);
-  }, [users]); // Depend on users to re-fetch current user if user list changes (e.g., password update)
+      setIsLoading(false);
+    };
+
+    loadData();
+  }, []);
 
   const handleLogin = (userId: string, password: string): boolean => {
     const user = users.find(u => u.id === userId);
@@ -59,11 +86,12 @@ const App: React.FC = () => {
     if (!userToUpdate) {
         return { success: false, message: "Không tìm thấy người dùng." };
     }
-    // 'change' mode requires old password validation
     if (oldPassword !== undefined && userToUpdate.password !== oldPassword) {
         return { success: false, message: "Mật khẩu cũ không chính xác." };
     }
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: newPassword } : u));
+    const updatedUsers = users.map(u => u.id === userId ? { ...u, password: newPassword } : u);
+    sheetService.saveUsers(updatedUsers);
+    setUsers(updatedUsers);
     return { success: true };
   };
 
@@ -75,108 +103,181 @@ const App: React.FC = () => {
     setPasswordModal({ isOpen: false, user: null, mode: 'change' });
   };
   
-  // Generic CRUD Handlers
-  const handleEntityChange = <T extends {id: string}>(setter: React.Dispatch<React.SetStateAction<T[]>>) => ({
-    add: (item: Omit<T, 'id'> & { id?: string }) => {
+  const handleEntityChange = <T extends {id: string}>(
+    state: T[],
+    setter: React.Dispatch<React.SetStateAction<T[]>>,
+    saver: (data: T[]) => Promise<void>
+  ) => ({
+    add: async (item: Omit<T, 'id'> & { id?: string }) => {
       const newItem = { ...item, id: item.id || `new-${Date.now()}` } as T;
-      setter(prev => [...prev, newItem]);
+      const newState = [...state, newItem];
+      await saver(newState);
+      setter(newState);
       return newItem;
     },
-    update: (updatedItem: T) => {
-      setter(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
+    update: async (updatedItem: T) => {
+      const newState = state.map(item => item.id === updatedItem.id ? updatedItem : item);
+      await saver(newState);
+      setter(newState);
     },
   });
 
-  // Specific Handlers with Cascade Logic
   const activityHandlers = {
-      ...handleEntityChange(setActivities),
-      remove: (id: string) => {
-          // Remove participation records for this activity
-          setParticipationRecords(prev => prev.filter(pr => pr.activityId !== id));
-          // Remove the activity
-          setActivities(prev => prev.filter(a => a.id !== id));
+      ...handleEntityChange(activities, setActivities, sheetService.saveActivities),
+      remove: async (id: string) => {
+          const newParticipationRecords = participationRecords.filter(pr => pr.activityId !== id);
+          const newActivities = activities.filter(a => a.id !== id);
+          await Promise.all([
+            sheetService.saveParticipationRecords(newParticipationRecords),
+            sheetService.saveActivities(newActivities),
+          ]);
+          setParticipationRecords(newParticipationRecords);
+          setActivities(newActivities);
       }
   };
 
   const academicYearHandlers = {
-      ...handleEntityChange(setAcademicYears),
-      remove: (id: string) => {
-          // Get all activities in the year and remove them (which also removes their records)
+      ...handleEntityChange(academicYears, setAcademicYears, sheetService.saveAcademicYears),
+      remove: async (id: string) => {
           const activitiesInYear = activities.filter(a => a.academicYearId === id);
-          activitiesInYear.forEach(a => activityHandlers.remove(a.id));
-          // Finally remove the year
-          setAcademicYears(prev => prev.filter(ay => ay.id !== id));
+          let newParticipationRecords = [...participationRecords];
+          activitiesInYear.forEach(a => {
+            newParticipationRecords = newParticipationRecords.filter(pr => pr.activityId !== a.id)
+          });
+          const newActivities = activities.filter(a => a.academicYearId !== id);
+          const newAcademicYears = academicYears.filter(ay => ay.id !== id);
+          
+          await Promise.all([
+            sheetService.saveParticipationRecords(newParticipationRecords),
+            sheetService.saveActivities(newActivities),
+            sheetService.saveAcademicYears(newAcademicYears)
+          ]);
+
+          setParticipationRecords(newParticipationRecords);
+          setActivities(newActivities);
+          setAcademicYears(newAcademicYears);
       }
   };
     
   const userHandlers = {
-      ...handleEntityChange(setUsers),
-      add: (item: Omit<User, 'id'>) => {
+      add: async (item: Omit<User, 'id'>) => {
           const newUser = { ...item, id: `user-${Date.now()}` } as User;
-          setUsers(prev => [...prev, newUser]);
+          const newUsers = [...users, newUser];
+          let newTeachers = [...teachers];
+
           if(item.role === UserRole.TEACHER || item.role === UserRole.GROUP_LEADER) {
-            teacherHandlers.add({ name: item.name, groupId: item.groupId || '', id: newUser.id });
+            newTeachers.push({ name: item.name, groupId: item.groupId || '', id: newUser.id });
           }
+          await Promise.all([
+            sheetService.saveUsers(newUsers),
+            sheetService.saveTeachers(newTeachers)
+          ]);
+          setUsers(newUsers);
+          setTeachers(newTeachers);
           return newUser;
       },
-      update: (updatedItem: User) => {
-        setUsers(prevUsers => {
-            const originalUser = prevUsers.find(u => u.id === updatedItem.id);
-            if (!originalUser) return prevUsers;
+      update: async (updatedItem: User) => {
+        const originalUser = users.find(u => u.id === updatedItem.id);
+        if (!originalUser) return;
 
-            const finalUpdatedItem = {
-                ...updatedItem,
-                password: updatedItem.password ? updatedItem.password : originalUser.password,
-            };
+        const finalUpdatedItem = {
+            ...updatedItem,
+            password: updatedItem.password ? updatedItem.password : originalUser.password,
+        };
+        const newUsers = users.map(user => user.id === updatedItem.id ? finalUpdatedItem : user);
 
-            // Sync with Teachers list based on role changes
-            setTeachers(prevTeachers => {
-                const isTeacherOrLeader = (role: UserRole) => role === UserRole.TEACHER || role === UserRole.GROUP_LEADER;
-                const wasTeacher = isTeacherOrLeader(originalUser.role);
-                const isNowTeacher = isTeacherOrLeader(finalUpdatedItem.role);
+        const isTeacherOrLeader = (role: UserRole) => role === UserRole.TEACHER || role === UserRole.GROUP_LEADER;
+        const wasTeacher = isTeacherOrLeader(originalUser.role);
+        const isNowTeacher = isTeacherOrLeader(finalUpdatedItem.role);
 
-                if (!wasTeacher && isNowTeacher) { // Promoted to teacher/leader
-                    return [...prevTeachers, { id: finalUpdatedItem.id, name: finalUpdatedItem.name, groupId: finalUpdatedItem.groupId || '' }];
-                }
-                if (wasTeacher && !isNowTeacher) { // Demoted from teacher/leader
-                    return prevTeachers.filter(t => t.id !== updatedItem.id);
-                }
-                if (wasTeacher && isNowTeacher) { // Was and is teacher/leader, update info
-                    return prevTeachers.map(t =>
-                        t.id === updatedItem.id
-                            ? { ...t, name: finalUpdatedItem.name, groupId: finalUpdatedItem.groupId || '' }
-                            : t
-                    );
-                }
-                return prevTeachers; // No role change affecting teacher list
-            });
+        let newTeachers = [...teachers];
+        if (!wasTeacher && isNowTeacher) {
+            newTeachers.push({ id: finalUpdatedItem.id, name: finalUpdatedItem.name, groupId: finalUpdatedItem.groupId || '' });
+        } else if (wasTeacher && !isNowTeacher) {
+            newTeachers = newTeachers.filter(t => t.id !== updatedItem.id);
+        } else if (wasTeacher && isNowTeacher) {
+            newTeachers = newTeachers.map(t =>
+                t.id === updatedItem.id
+                    ? { ...t, name: finalUpdatedItem.name, groupId: finalUpdatedItem.groupId || '' }
+                    : t
+            );
+        }
 
-            return prevUsers.map(user => user.id === updatedItem.id ? finalUpdatedItem : user);
-        });
+        await Promise.all([
+            sheetService.saveUsers(newUsers),
+            sheetService.saveTeachers(newTeachers)
+        ]);
+        setUsers(newUsers);
+        setTeachers(newTeachers);
       },
-      remove: (id: string) => {
-        setParticipationRecords(prev => prev.filter(pr => pr.teacherId !== id));
-        setGroups(prev => prev.map(g => g.leaderId === id ? { ...g, leaderId: '' } : g)); // Unset as leader
-        setTeachers(prev => prev.filter(t => t.id !== id));
-        setUsers(prev => prev.filter(u => u.id !== id));
+      remove: async (id: string) => {
+        const newParticipationRecords = participationRecords.filter(pr => pr.teacherId !== id);
+        const newGroups = groups.map(g => g.leaderId === id ? { ...g, leaderId: '' } : g);
+        const newTeachers = teachers.filter(t => t.id !== id);
+        const newUsers = users.filter(u => u.id !== id);
+
+        await Promise.all([
+            sheetService.saveParticipationRecords(newParticipationRecords),
+            sheetService.saveGroups(newGroups),
+            sheetService.saveTeachers(newTeachers),
+            sheetService.saveUsers(newUsers)
+        ]);
+        setParticipationRecords(newParticipationRecords);
+        setGroups(newGroups);
+        setTeachers(newTeachers);
+        setUsers(newUsers);
       }
   };
-
+  
   const teacherHandlers = {
-      ...handleEntityChange(setTeachers),
-      remove: (id: string) => {
-          userHandlers.remove(id); // Deleting a teacher deletes the user and all related data
+      ...handleEntityChange(teachers, setTeachers, sheetService.saveTeachers),
+      add: async (item: Omit<Teacher, 'id'>) => {
+        alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.");
+      },
+      update: async(updatedItem: Teacher) => {
+        const newTeachers = teachers.map(t => t.id === updatedItem.id ? updatedItem : t);
+        const newUsers = users.map(u => u.id === updatedItem.id ? {...u, name: updatedItem.name, groupId: updatedItem.groupId } : u);
+        await Promise.all([sheetService.saveTeachers(newTeachers), sheetService.saveUsers(newUsers)]);
+        setTeachers(newTeachers);
+        setUsers(newUsers);
+      },
+      remove: async (id: string) => {
+          await userHandlers.remove(id); // Deleting a teacher deletes the user and all related data
       }
   };
 
   const groupHandlers = {
-      ...handleEntityChange(setGroups),
-      remove: (id: string) => {
-          // Remove all teachers (and their user accounts) in the group
+      ...handleEntityChange(groups, setGroups, sheetService.saveGroups),
+      remove: async (id: string) => {
           const teachersInGroup = teachers.filter(t => t.groupId === id);
-          teachersInGroup.forEach(t => userHandlers.remove(t.id));
-          // Finally remove the group
-          setGroups(prev => prev.filter(g => g.id !== id));
+          let newUsers = [...users];
+          let newParticipationRecords = [...participationRecords];
+          teachersInGroup.forEach(t => {
+            newUsers = newUsers.filter(u => u.id !== t.id);
+            newParticipationRecords = newParticipationRecords.filter(pr => pr.teacherId !== t.id);
+          });
+          const newTeachers = teachers.filter(t => t.groupId !== id);
+          const newGroups = groups.filter(g => g.id !== id);
+
+          await Promise.all([
+            sheetService.saveUsers(newUsers),
+            sheetService.saveParticipationRecords(newParticipationRecords),
+            sheetService.saveTeachers(newTeachers),
+            sheetService.saveGroups(newGroups)
+          ]);
+          setUsers(newUsers);
+          setParticipationRecords(newParticipationRecords);
+          setTeachers(newTeachers);
+          setGroups(newGroups);
+      }
+  };
+
+  const participationRecordHandlers = {
+      updateBatch: async (activityId: string, newRecordsForActivity: ParticipationRecord[]) => {
+          const otherRecords = participationRecords.filter(pr => pr.activityId !== activityId);
+          const allNewRecords = [...otherRecords, ...newRecordsForActivity];
+          await sheetService.saveParticipationRecords(allNewRecords);
+          setParticipationRecords(allNewRecords);
       }
   };
 
@@ -199,8 +300,8 @@ const App: React.FC = () => {
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <Dashboard
                 currentUser={currentUser}
-                data={{ users, academicYears, groups, teachers, activities, participationRecords, setParticipationRecords }}
-                handlers={{ userHandlers, academicYearHandlers, groupHandlers, teacherHandlers, activityHandlers, requestPasswordReset: (user: User) => openPasswordModal(user, 'reset') }}
+                data={{ users, academicYears, groups, teachers, activities, participationRecords }}
+                handlers={{ userHandlers, academicYearHandlers, groupHandlers, teacherHandlers, activityHandlers, participationRecordHandlers, requestPasswordReset: (user: User) => openPasswordModal(user, 'reset') }}
               />
             </div>
           </main>

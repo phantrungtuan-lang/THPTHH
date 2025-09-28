@@ -32,6 +32,7 @@ type ModalState = {
 export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, data, handlers }) => {
     const [modal, setModal] = useState<ModalState | null>(null);
     const [formData, setFormData] = useState<any>({});
+    const [isSaving, setIsSaving] = useState(false);
 
     const openModal = (type: ModalState['type'], mode: ModalState['mode'], data?: any) => {
         setModal({ type, mode, data });
@@ -46,9 +47,11 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!modal || !modal.type) return;
+        if (!modal || !modal.type || isSaving) return;
+        
+        setIsSaving(true);
 
         let handler;
         switch (modal.type) {
@@ -69,20 +72,29 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                 break;
             default:
                 console.error('Unknown modal type:', modal.type);
+                setIsSaving(false);
                 return;
         }
 
         if (!handler) {
             console.error('Handler not found for type:', modal.type);
+            setIsSaving(false);
             return;
         }
 
-        if (modal.mode === 'add') {
-            handler.add(formData);
-        } else {
-            handler.update(formData);
+        try {
+            if (modal.mode === 'add') {
+                await handler.add(formData);
+            } else {
+                await handler.update(formData);
+            }
+        } catch (error) {
+            console.error("Failed to save data:", error);
+            alert("Đã có lỗi xảy ra khi lưu dữ liệu.");
+        } finally {
+            setIsSaving(false);
+            closeModal();
         }
-        closeModal();
     };
     
     const renderFormFields = () => {
@@ -100,7 +112,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             case 'group':
                  return <>
                     <InputField name="name" label="Tên tổ" value={formData.name || ''} onChange={handleFormChange} required/>
-                    <SelectField name="leaderId" label="Tổ trưởng" value={formData.leaderId || ''} onChange={handleFormChange} options={data.teachers.map(t => ({value: t.id, label: t.name}))} required/>
+                    <SelectField name="leaderId" label="Tổ trưởng" value={formData.leaderId || ''} onChange={handleFormChange} options={data.users.filter(u => u.role === UserRole.TEACHER || u.role === UserRole.GROUP_LEADER).map(t => ({value: t.id, label: t.name}))} required/>
                  </>;
             case 'teacher':
                  return <>
@@ -129,7 +141,9 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {renderFormFields()}
                     <div className="flex justify-end pt-4">
-                        <button type="submit" className="px-6 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Lưu</button>
+                        <button type="submit" className="px-6 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300" disabled={isSaving}>
+                            {isSaving ? 'Đang lưu...' : 'Lưu'}
+                        </button>
                     </div>
                 </form>
             </Modal>
@@ -156,7 +170,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             <ManagementCard title="Tổ chuyên môn" onAdd={() => openModal('group', 'add')}>
                 {data.groups.map(group => <ItemRow key={group.id} name={group.name} onEdit={() => openModal('group', 'edit', group)} onDelete={() => handlers.groupHandlers.remove(group.id)}/>)}
             </ManagementCard>
-             <ManagementCard title="Giáo viên" onAdd={() => openModal('teacher', 'add')}>
+             <ManagementCard title="Giáo viên" onAdd={() => alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.")}>
                 {data.teachers.map(teacher => <ItemRow key={teacher.id} name={teacher.name} onEdit={() => openModal('teacher', 'edit', teacher)} onDelete={() => handlers.teacherHandlers.remove(teacher.id)}/>)}
             </ManagementCard>
             <ManagementCard title="Năm học" onAdd={() => openModal('year', 'add')}>
@@ -182,7 +196,7 @@ const ItemRow: React.FC<{name: string, onEdit?: () => void, onDelete?: () => voi
         <div className="flex gap-3">
             {onResetPassword && <button onClick={onResetPassword} title="Reset mật khẩu" className="text-gray-500 hover:text-gray-700"><KeyIcon/></button>}
             {onEdit && <button onClick={onEdit} className="text-blue-500 hover:text-blue-700"><PencilIcon/></button>}
-            {onDelete && <button onClick={() => window.confirm('Bạn có chắc chắn muốn xóa?') && onDelete()} className="text-red-500 hover:text-red-700"><TrashIcon/></button>}
+            {onDelete && <button onClick={() => window.confirm('Bạn có chắc chắn muốn xóa? Thao tác này có thể ảnh hưởng đến các dữ liệu liên quan.') && onDelete()} className="text-red-500 hover:text-red-700"><TrashIcon/></button>}
         </div>
     </div>
 );

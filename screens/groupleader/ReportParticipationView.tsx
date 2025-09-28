@@ -8,16 +8,19 @@ interface ReportParticipationViewProps {
     activities: Activity[];
     teachers: Teacher[];
     participationRecords: ParticipationRecord[];
-    setParticipationRecords: React.Dispatch<React.SetStateAction<ParticipationRecord[]>>;
   };
+  handlers: {
+    participationRecordHandlers: any;
+  }
   onReportSaved: (activityId: string) => void;
 }
 
 type StatusMap = Record<string, ParticipationStatus>;
 
-export const ReportParticipationView: React.FC<ReportParticipationViewProps> = ({ currentUser, data, onReportSaved }) => {
-  const { activities, teachers, participationRecords, setParticipationRecords } = data;
+export const ReportParticipationView: React.FC<ReportParticipationViewProps> = ({ currentUser, data, handlers, onReportSaved }) => {
+  const { activities, teachers, participationRecords } = data;
   const [selectedActivityId, setSelectedActivityId] = useState<string>(activities.length > 0 ? activities[0].id : '');
+  const [isSaving, setIsSaving] = useState(false);
   
   const groupTeachers = useMemo(() => {
     return teachers.filter(t => t.groupId === currentUser.groupId);
@@ -42,19 +45,27 @@ export const ReportParticipationView: React.FC<ReportParticipationViewProps> = (
     setStatuses(prev => ({...prev, [teacherId]: status}));
   };
 
-  const handleSave = () => {
-    setParticipationRecords(prevRecords => {
-        const otherRecords = prevRecords.filter(pr => pr.activityId !== selectedActivityId);
-        const newRecords: ParticipationRecord[] = Object.entries(statuses).map(([teacherId, status]) => ({
-            id: `pr-${teacherId}-${selectedActivityId}-${Math.random()}`,
-            teacherId,
-            activityId: selectedActivityId,
-            status,
-        }));
-        return [...otherRecords, ...newRecords];
-    });
-    alert('Đã cập nhật báo cáo thành công!');
-    onReportSaved(selectedActivityId);
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    
+    const newRecords: ParticipationRecord[] = Object.entries(statuses).map(([teacherId, status]) => ({
+        id: `pr-${teacherId}-${selectedActivityId}-${Math.random()}`,
+        teacherId,
+        activityId: selectedActivityId,
+        status,
+    }));
+    
+    try {
+        await handlers.participationRecordHandlers.updateBatch(selectedActivityId, newRecords);
+        alert('Đã cập nhật báo cáo thành công!');
+        onReportSaved(selectedActivityId);
+    } catch (error) {
+        console.error("Failed to save participation records:", error);
+        alert("Có lỗi xảy ra khi lưu báo cáo.");
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   return (
@@ -88,10 +99,10 @@ export const ReportParticipationView: React.FC<ReportParticipationViewProps> = (
       <div className="mt-6 text-right">
         <button 
           onClick={handleSave}
-          className="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          disabled={!selectedActivityId || groupTeachers.length === 0}
+          className="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-300"
+          disabled={!selectedActivityId || groupTeachers.length === 0 || isSaving}
         >
-          Lưu báo cáo
+          {isSaving ? 'Đang lưu...' : 'Lưu báo cáo'}
         </button>
       </div>
     </Card>
