@@ -28,11 +28,18 @@ type AdminTab = 'management' | 'reports';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, data, handlers }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('management');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
 
   const renderContent = () => {
     switch (activeTab) {
       case 'management':
-        return <ManagementView currentUser={currentUser} data={data} handlers={handlers} />;
+        return <ManagementView 
+                  currentUser={currentUser} 
+                  data={data} 
+                  handlers={handlers} 
+                  selectedGroupId={selectedGroupId}
+                  onGroupFilterChange={setSelectedGroupId}
+               />;
       case 'reports':
         return <AdminReportView data={data} />;
       default:

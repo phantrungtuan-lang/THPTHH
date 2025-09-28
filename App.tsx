@@ -137,7 +137,11 @@ const App: React.FC = () => {
           return newItem;
       },
       update: async (updatedItem: T) => {
-          await api.update<T>(tableName, updatedItem.id, updatedItem);
+          const { id, ...updatePayload } = updatedItem;
+          // Fix: Cast `updatePayload` to `Partial<T>` because TypeScript cannot infer
+          // that `Omit<T, 'id'>` is assignable to `Partial<T>` for a generic T.
+          // This is a safe cast as `updatePayload` is a valid partial object for an update.
+          await api.update<T>(tableName, id, updatePayload as Partial<T>);
           setter(state.map(item => item.id === updatedItem.id ? updatedItem : item));
       },
       remove: async (id: string) => {
@@ -167,7 +171,10 @@ const App: React.FC = () => {
             ...updatedItem,
             password: updatedItem.password ? updatedItem.password : originalUser.password,
         };
-        await api.updateUser(finalUpdatedItem.id, finalUpdatedItem);
+
+        const { id, ...updatePayload } = finalUpdatedItem;
+        await api.updateUser(id, updatePayload);
+        
         setUsers(users.map(user => user.id === updatedItem.id ? finalUpdatedItem : user));
       },
       remove: async (id: string) => {

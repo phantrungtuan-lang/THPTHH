@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card } from '../../components/Card';
 import { Modal } from '../../components/Modal';
 import { PlusIcon, PencilIcon, TrashIcon, KeyIcon } from '../../components/icons';
@@ -21,6 +21,8 @@ interface ManagementViewProps {
     activityHandlers: any;
     requestPasswordReset: (user: User) => void;
   };
+  selectedGroupId: string;
+  onGroupFilterChange: (groupId: string) => void;
 }
 
 type ModalState = {
@@ -29,7 +31,7 @@ type ModalState = {
     data?: any;
 }
 
-export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, data, handlers }) => {
+export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, data, handlers, selectedGroupId, onGroupFilterChange }) => {
     const [modal, setModal] = useState<ModalState | null>(null);
     const [formData, setFormData] = useState<any>({});
     const [isSaving, setIsSaving] = useState(false);
@@ -54,10 +56,19 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
         setIsSaving(true);
 
         let handler;
-        let dataToSubmit = { ...formData };
+        let dataToSubmit: any = { ...formData };
         if (modal.type === 'user' && !dataToSubmit.password) {
             delete dataToSubmit.password;
         }
+
+        // Convert empty string foreign keys to null before submission
+        if (modal.type === 'user' && dataToSubmit.groupId === '') {
+            dataToSubmit.groupId = null;
+        }
+        if (modal.type === 'group' && dataToSubmit.leaderId === '') {
+            dataToSubmit.leaderId = null;
+        }
+
 
         switch (modal.type) {
             case 'user': handler = handlers.userHandlers; break;
@@ -85,6 +96,13 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             closeModal();
         }
     };
+
+    const filteredTeachers = useMemo(() => {
+        if (!selectedGroupId || selectedGroupId === 'all') {
+            return data.teachers;
+        }
+        return data.teachers.filter(teacher => teacher.groupId === selectedGroupId);
+    }, [data.teachers, selectedGroupId]);
     
     const renderFormFields = () => {
         if (!modal) return null;
@@ -92,7 +110,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             case 'user':
                 return <>
                     <InputField name="name" label="Tên người dùng" value={formData.name || ''} onChange={handleFormChange} required/>
-                    <InputField name="email" label="Email đăng nhập (Google)" type="email" value={formData.email || ''} onChange={handleFormChange} required/>
+                    <InputField name="email" label="Email đăng nhập" type="email" value={formData.email || ''} onChange={handleFormChange} required/>
                     <InputField name="password" label="Mật khẩu" type="password" value={formData.password || ''} onChange={handleFormChange} placeholder={modal?.mode === 'edit' ? "Để trống nếu không đổi" : ""} required={modal?.mode === 'add'}/>
                     <SelectField name="role" label="Vai trò" value={formData.role || ''} onChange={handleFormChange} options={Object.values(UserRole).map(r => ({value: r, label: r}))} required/>
                     {(formData.role === UserRole.TEACHER || formData.role === UserRole.GROUP_LEADER) &&
@@ -102,7 +120,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             case 'group':
                  return <>
                     <InputField name="name" label="Tên tổ" value={formData.name || ''} onChange={handleFormChange} required/>
-                    <SelectField name="leaderId" label="Tổ trưởng" value={formData.leaderId || ''} onChange={handleFormChange} options={data.users.filter(u => u.role === UserRole.TEACHER || u.role === UserRole.GROUP_LEADER).map(t => ({value: t.id, label: t.name}))} required/>
+                    <SelectField name="leaderId" label="Tổ trưởng" value={formData.leaderId || ''} onChange={handleFormChange} options={data.users.filter(u => u.role === UserRole.TEACHER || u.role === UserRole.GROUP_LEADER).map(t => ({value: t.id, label: t.name}))}/>
                  </>;
             // "teacher" form is handled by "user" form now.
             case 'teacher': 
@@ -159,7 +177,21 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                 {data.groups.map(group => <ItemRow key={group.id} name={group.name} onEdit={() => openModal('group', 'edit', group)} onDelete={() => handlers.groupHandlers.remove(group.id)}/>)}
             </ManagementCard>
              <ManagementCard title="Giáo viên" onAdd={() => alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.")}>
-                {data.teachers.map(teacher => {
+                <div className="mb-4">
+                    <label htmlFor="group-filter" className="block text-sm font-medium text-gray-700">Lọc theo tổ</label>
+                    <select
+                        id="group-filter"
+                        value={selectedGroupId}
+                        onChange={(e) => onGroupFilterChange(e.target.value)}
+                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                    >
+                        <option value="all">Tất cả các tổ</option>
+                        {data.groups.map(group => (
+                            <option key={group.id} value={group.id}>{group.name}</option>
+                        ))}
+                    </select>
+                </div>
+                {filteredTeachers.map(teacher => {
                     const user = data.users.find(u => u.id === teacher.id);
                     return <ItemRow 
                         key={teacher.id} 
