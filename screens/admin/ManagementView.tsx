@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Card } from '../../components/Card';
 import { Modal } from '../../components/Modal';
@@ -103,6 +104,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             case 'user':
                 return <>
                     <InputField name="name" label="Tên người dùng" value={formData.name || ''} onChange={handleFormChange} required/>
+                    <InputField name="email" label="Email đăng nhập (Google)" type="email" value={formData.email || ''} onChange={handleFormChange} required/>
                     <InputField name="password" label="Mật khẩu" type="password" value={formData.password || ''} onChange={handleFormChange} placeholder={modal?.mode === 'edit' ? "Để trống nếu không đổi" : ""} required={modal?.mode === 'add'}/>
                     <SelectField name="role" label="Vai trò" value={formData.role || ''} onChange={handleFormChange} options={Object.values(UserRole).map(r => ({value: r, label: r}))} required/>
                     {(formData.role === UserRole.TEACHER || formData.role === UserRole.GROUP_LEADER) &&

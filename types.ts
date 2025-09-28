@@ -16,8 +16,8 @@ export enum ParticipationStatus {
 export interface User {
   id: string;
   name: string;
+  email: string;
   role: UserRole;
-  // Fix: Corrected the typo in the password property definition from a semicolon to a colon.
   password: string;
   groupId?: string; // For Group Leaders and Teachers
 }

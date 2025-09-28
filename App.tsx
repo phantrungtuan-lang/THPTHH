@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Dashboard } from './screens/Dashboard';
@@ -44,13 +45,16 @@ const App: React.FC = () => {
     setActivities(loadedActivities);
     setParticipationRecords(loadedParticipationRecords);
     
-    // Simulate user selection after data load
-    // In a real app, you might have a user selection screen if the Google User can manage multiple teacher accounts
+    // Find the user profile that matches the signed-in Google account email.
     const googleUserEmail = api.getSignedInUserEmail();
     console.log("Google User Email:", googleUserEmail);
-    // For this example, we will just set the first admin as the current user.
-    const adminUser = loadedUsers.find(u => u.role === UserRole.ADMIN);
-    setCurrentUser(adminUser || loadedUsers[0] || null);
+
+    if (googleUserEmail) {
+        const userProfile = loadedUsers.find(u => u.email?.toLowerCase() === googleUserEmail.toLowerCase());
+        setCurrentUser(userProfile || null);
+    } else {
+        setCurrentUser(null);
+    }
     
     setIsLoading(false);
   }, []);
@@ -140,8 +144,8 @@ const App: React.FC = () => {
   };
     
   const userHandlers = {
-      add: async (item: Omit<User, 'id'>) => {
-          const newUser = { ...item, id: `user-${Date.now()}` } as User;
+      add: async (item: Omit<User, 'id' | 'password'> & {password?: string}) => {
+          const newUser = { ...item, password: item.password || '123', id: `user-${Date.now()}` } as User;
           const newUsers = [...users, newUser];
           let newTeachers = [...teachers];
 
@@ -276,7 +280,19 @@ const App: React.FC = () => {
   }
   
   if (!currentUser) {
-      return <div className="flex items-center justify-center min-h-screen">Đã đăng nhập, nhưng không thể xác định người dùng hiện tại. Vui lòng liên hệ quản trị viên.</div>;
+      return (
+        <div className="flex items-center justify-center min-h-screen text-center p-4 bg-slate-100">
+          <div>
+            <h2 className="text-2xl font-bold text-red-600">Truy cập bị từ chối</h2>
+            <p className="text-gray-700 mt-2 max-w-md">
+              Tài khoản Google của bạn chưa được cấp quyền truy cập hệ thống. Vui lòng liên hệ quản trị viên để được thêm vào danh sách người dùng.
+            </p>
+            <button onClick={handleLogout} className="mt-6 px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+              Đăng xuất
+            </button>
+          </div>
+        </div>
+      );
   }
 
   return (

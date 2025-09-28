@@ -2,13 +2,13 @@
 import { User, UserRole, AcademicYear, Group, Teacher, Activity, ParticipationStatus, ParticipationRecord } from './types';
 
 export const USERS: User[] = [
-  { id: 'user-admin', name: 'Admin User', role: UserRole.ADMIN, password: '123' },
-  { id: 'user-leader-1', name: 'Tổ trưởng Toán', role: UserRole.GROUP_LEADER, groupId: 'group-1', password: '123' },
-  { id: 'user-leader-2', name: 'Tổ trưởng Văn', role: UserRole.GROUP_LEADER, groupId: 'group-2', password: '123' },
-  { id: 'user-teacher-1', name: 'Nguyễn Văn A', role: UserRole.TEACHER, groupId: 'group-1', password: '123' },
-  { id: 'user-teacher-2', name: 'Trần Thị B', role: UserRole.TEACHER, groupId: 'group-1', password: '123' },
-  { id: 'user-teacher-3', name: 'Lê Văn C', role: UserRole.TEACHER, groupId: 'group-2', password: '123' },
-  { id: 'user-teacher-4', name: 'Phạm Thị D', role: UserRole.TEACHER, groupId: 'group-2', password: '123' },
+  { id: 'user-admin', name: 'Admin User', email: 'admin.user@example.com', role: UserRole.ADMIN, password: '123' },
+  { id: 'user-leader-1', name: 'Tổ trưởng Toán', email: 'leader.toan@example.com', role: UserRole.GROUP_LEADER, groupId: 'group-1', password: '123' },
+  { id: 'user-leader-2', name: 'Tổ trưởng Văn', email: 'leader.van@example.com', role: UserRole.GROUP_LEADER, groupId: 'group-2', password: '123' },
+  { id: 'user-teacher-1', name: 'Nguyễn Văn A', email: 'teacher.a@example.com', role: UserRole.TEACHER, groupId: 'group-1', password: '123' },
+  { id: 'user-teacher-2', name: 'Trần Thị B', email: 'teacher.b@example.com', role: UserRole.TEACHER, groupId: 'group-1', password: '123' },
+  { id: 'user-teacher-3', name: 'Lê Văn C', email: 'teacher.c@example.com', role: UserRole.TEACHER, groupId: 'group-2', password: '123' },
+  { id: 'user-teacher-4', name: 'Phạm Thị D', email: 'teacher.d@example.com', role: UserRole.TEACHER, groupId: 'group-2', password: '123' },
 ];
 
 export const ACADEMIC_YEARS: AcademicYear[] = [
