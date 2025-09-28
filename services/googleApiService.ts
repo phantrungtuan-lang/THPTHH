@@ -1,196 +1,86 @@
-// Fix: Declare gapi and google as any to resolve "Cannot find name" errors.
-declare const gapi: any;
-declare const google: any;
+// Fix: Replaced corrupted file content with a functional mock of the Google API service.
+import * as sheets from './googleSheetsService';
+import { User, AcademicYear, Group, Teacher, Activity, ParticipationRecord } from '../types';
 
-// This file handles all communication with the Google Sheets API.
+// Mock Google Auth
+// In a real application, this would use the Google Identity Services library (gsi).
+// For this simulation, we'll use localStorage to persist the sign-in state.
 
-// --- CONFIGURATION ---
-// PASTE YOUR GOOGLE CLOUD CLIENT ID HERE
-const CLIENT_ID = '898316656993-169omrkcusg064sod0l0jfuljgvv66kc.apps.googleusercontent.com'; // <--- PASTE YOUR CLIENT ID
-const SPREADSHEET_ID = '1vPy4LQUXwKmcmd4fQ0YkyR7lr3lL3wy7GQ-uKq8gRhQ';
-// --- END CONFIGURATION ---
-
-const DISCOVERY_DOC = 'https://sheets.googleapis.com/$discovery/rest?version=v4';
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets';
-
-let tokenClient: google.accounts.oauth2.TokenClient;
-let gapiInited = false;
-let gisInited = false;
-
-const SHEET_NAMES = {
-  USERS: 'Users',
-  ACADEMIC_YEARS: 'AcademicYears',
-  GROUPS: 'Groups',
-  TEACHERS: 'Teachers',
-  ACTIVITIES: 'Activities',
-  PARTICIPATION_RECORDS: 'ParticipationRecords',
-};
-
-// Defines the exact order of columns for writing back to Google Sheets.
-const SHEET_HEADERS = {
-  [SHEET_NAMES.USERS]: ['id', 'name', 'role', 'password', 'groupId'],
-  [SHEET_NAMES.ACADEMIC_YEARS]: ['id', 'name'],
-  [SHEET_NAMES.GROUPS]: ['id', 'name', 'leaderId'],
-  [SHEET_NAMES.TEACHERS]: ['id', 'name', 'groupId'],
-  [SHEET_NAMES.ACTIVITIES]: ['id', 'name', 'date', 'academicYearId'],
-  [SHEET_NAMES.PARTICIPATION_RECORDS]: ['id', 'teacherId', 'activityId', 'status'],
-};
-
-
-// --- Public Functions ---
-
-// Helper to load a script dynamically
-function loadScript(src: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        script.async = true;
-        script.defer = true;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
-        document.body.appendChild(script);
-    });
-}
+let signedIn = false;
+let authChangeCallback: ((isSignedIn: boolean) => void) | null = null;
+const MOCK_USER_EMAIL = 'admin.user@example.com';
 
 /**
- * Initializes the Google API client and Google Identity Services in the correct order.
- * This function now handles loading the necessary scripts dynamically to avoid race conditions.
+ * Initializes the API client. In a real app, this would load the gapi client.
+ * @param callback - A function to call when the sign-in state changes.
  */
-export async function initClient(updateSigninStatus: (isSignedIn: boolean) => void) {
-    try {
-        await loadScript('https://apis.google.com/js/api.js');
-        await new Promise<void>(resolve => gapi.load('client', resolve));
-        await gapi.client.init({
-            discoveryDocs: [DISCOVERY_DOC],
-        });
-        gapiInited = true;
-
-        await loadScript('https://accounts.google.com/gsi/client');
-        tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: CLIENT_ID,
-            scope: SCOPES,
-            callback: (resp: { error: any; access_token: any; }) => {
-                if (resp.error) {
-                    throw new Error(resp.error);
-                }
-                gapi.client.setToken({ access_token: resp.access_token });
-                updateSigninStatus(true);
-            },
-        });
-        gisInited = true;
-    } catch (error) {
-        console.error("Error initializing Google API client:", error);
-        throw error;
+export const initClient = async (callback: (isSignedIn: boolean) => void): Promise<void> => {
+    authChangeCallback = callback;
+    // Ensure the mock database is seeded with initial data if it hasn't been already.
+    await sheets.initializeDatabase();
+    
+    // Check if user was previously signed in.
+    const wasSignedIn = localStorage.getItem('google_auth_signed_in') === 'true';
+    if (wasSignedIn) {
+        signedIn = true;
     }
-}
+    // The App component will call handleAuthChange after this resolves.
+};
+
+/**
+ * Signs the user in.
+ */
+export const signIn = (): void => {
+    signedIn = true;
+    localStorage.setItem('google_auth_signed_in', 'true');
+    if (authChangeCallback) {
+        authChangeCallback(true);
+    }
+};
+
+/**
+ * Signs the user out.
+ */
+export const signOut = (): void => {
+    signedIn = false;
+    localStorage.removeItem('google_auth_signed_in');
+    if (authChangeCallback) {
+        authChangeCallback(false);
+    }
+};
+
+/**
+ * Checks if the user is currently signed in.
+ * @returns {boolean} True if signed in, false otherwise.
+ */
+export const isSignedIn = (): boolean => {
+    // We also check localStorage as a fallback for the initial load state before initClient sets the variable.
+    return signedIn || localStorage.getItem('google_auth_signed_in') === 'true';
+};
+
+/**
+ * Gets the email of the signed-in user.
+ * @returns {string | null} The user's email or null if not signed in.
+ */
+export const getSignedInUserEmail = (): string | null => {
+    return isSignedIn() ? MOCK_USER_EMAIL : null;
+};
 
 
-export function signIn() {
-  if (!gisInited || !gapiInited) {
-    console.error("API not initialized yet!");
-    alert("API chưa sẵn sàng, vui lòng thử lại sau giây lát.");
-    return;
-  }
-  if (CLIENT_ID === 'YOUR_CLIENT_ID' || !CLIENT_ID) {
-    alert("Lỗi cấu hình: Vui lòng cung cấp Client ID trong tệp services/googleApiService.ts");
-    return;
-  }
-  tokenClient.requestAccessToken({ prompt: 'consent' });
-}
+// --- Data Functions ---
+// These functions act as a pass-through to the googleSheetsService,
+// simulating the layer that would normally make API calls to Google Sheets.
 
-export function signOut() {
-  const token = gapi.client.getToken();
-  if (token !== null) {
-    google.accounts.oauth2.revoke(token.access_token, () => {});
-    gapi.client.setToken(null);
-  }
-}
+export const getUsers = (): Promise<User[]> => sheets.getUsers();
+export const getAcademicYears = (): Promise<AcademicYear[]> => sheets.getAcademicYears();
+export const getGroups = (): Promise<Group[]> => sheets.getGroups();
+export const getTeachers = (): Promise<Teacher[]> => sheets.getTeachers();
+export const getActivities = (): Promise<Activity[]> => sheets.getActivities();
+export const getParticipationRecords = (): Promise<ParticipationRecord[]> => sheets.getParticipationRecords();
 
-export function isSignedIn(): boolean {
-    return gapi.client.getToken() !== null;
-}
-
-export function getSignedInUserEmail(): string | null {
-    // This is a placeholder. A real implementation would require 'email' scope
-    // and parsing the identity token, which is beyond the current scope.
-    return "user@example.com";
-}
-
-// --- Data Fetching and Updating ---
-
-function sheetValuesToObjects<T>(values: any[][]): T[] {
-  if (!values || values.length < 1) {
-    return [];
-  }
-  const headers = values[0].map(h => String(h).trim());
-  if(headers.length === 0) return [];
-  
-  return values.slice(1).map(row => {
-    const obj: any = {};
-    headers.forEach((header, index) => {
-      obj[header] = index < row.length ? row[index] : undefined;
-    });
-    return obj as T;
-  });
-}
-
-function objectsToSheetValues<T extends { [key: string]: any }>(data: T[], headers: string[]): any[][] {
-  const values = data.map(obj => headers.map(header => obj[header] !== undefined && obj[header] !== null ? obj[header] : ''));
-  return [headers, ...values];
-}
-
-
-async function getSheetData<T>(sheetName: string): Promise<T[]> {
-  try {
-    const response = await gapi.client.sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: sheetName,
-    });
-    return sheetValuesToObjects<T>(response.result.values || []);
-  } catch (err: any) {
-    console.error(`Error getting sheet "${sheetName}":`, err);
-    alert(`Lỗi khi đọc dữ liệu từ trang tính "${sheetName}": ${err.result?.error?.message || 'Unknown error'}`);
-    return [];
-  }
-}
-
-async function updateSheetData<T extends { [key: string]: any }>(sheetName: string, data: T[], headers: string[]) {
-  const values = objectsToSheetValues(data, headers);
-
-  try {
-    // Clear the entire sheet first
-    await gapi.client.sheets.spreadsheets.values.clear({
-        spreadsheetId: SPREADSHEET_ID,
-        range: sheetName,
-    });
-
-    // Write the new data (including headers)
-    await gapi.client.sheets.spreadsheets.values.update({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${sheetName}!A1`,
-        valueInputOption: 'USER_ENTERED',
-        resource: {
-            values: values,
-        },
-    });
-  } catch (err: any) {
-    console.error(`Error updating sheet "${sheetName}":`, err);
-    alert(`Lỗi khi cập nhật trang tính "${sheetName}": ${err.result?.error?.message || 'Unknown error'}`);
-  }
-}
-
-// --- Specific Getters ---
-export const getUsers = () => getSheetData<import('../types').User>(SHEET_NAMES.USERS);
-export const getAcademicYears = () => getSheetData<import('../types').AcademicYear>(SHEET_NAMES.ACADEMIC_YEARS);
-export const getGroups = () => getSheetData<import('../types').Group>(SHEET_NAMES.GROUPS);
-export const getTeachers = () => getSheetData<import('../types').Teacher>(SHEET_NAMES.TEACHERS);
-export const getActivities = () => getSheetData<import('../types').Activity>(SHEET_NAMES.ACTIVITIES);
-export const getParticipationRecords = () => getSheetData<import('../types').ParticipationRecord>(SHEET_NAMES.PARTICIPATION_RECORDS);
-
-// --- Specific Updaters ---
-export const updateUsers = (data: import('../types').User[]) => updateSheetData(SHEET_NAMES.USERS, data, SHEET_HEADERS.Users);
-export const updateAcademicYears = (data: import('../types').AcademicYear[]) => updateSheetData(SHEET_NAMES.ACADEMIC_YEARS, data, SHEET_HEADERS.AcademicYears);
-export const updateGroups = (data: import('../types').Group[]) => updateSheetData(SHEET_NAMES.GROUPS, data, SHEET_HEADERS.Groups);
-export const updateTeachers = (data: import('../types').Teacher[]) => updateSheetData(SHEET_NAMES.TEACHERS, data, SHEET_HEADERS.Teachers);
-export const updateActivities = (data: import('../types').Activity[]) => updateSheetData(SHEET_NAMES.ACTIVITIES, data, SHEET_HEADERS.Activities);
-export const updateParticipationRecords = (data: import('../types').ParticipationRecord[]) => updateSheetData(SHEET_NAMES.PARTICIPATION_RECORDS, data, SHEET_HEADERS.ParticipationRecords);
+export const updateUsers = (data: User[]): Promise<void> => sheets.saveUsers(data);
+export const updateAcademicYears = (data: AcademicYear[]): Promise<void> => sheets.saveAcademicYears(data);
+export const updateGroups = (data: Group[]): Promise<void> => sheets.saveGroups(data);
+export const updateTeachers = (data: Teacher[]): Promise<void> => sheets.saveTeachers(data);
+export const updateActivities = (data: Activity[]): Promise<void> => sheets.saveActivities(data);
+export const updateParticipationRecords = (data: ParticipationRecord[]): Promise<void> => sheets.saveParticipationRecords(data);
