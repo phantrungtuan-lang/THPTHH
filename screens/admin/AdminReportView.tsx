@@ -1,126 +1,149 @@
+
 import React, { useState, useMemo } from 'react';
 import { Card } from '../../components/Card';
-import { User, AcademicYear, Group, Teacher, Activity, ParticipationRecord, ParticipationStatus } from '../../types';
+import { ParticipationBadge } from '../../components/ParticipationBadge';
+import { Activity, ParticipationStatus, Teacher, AcademicYear, Group, ParticipationRecord, User } from '../../types';
 
 interface AdminReportViewProps {
   data: {
-    users: User[];
     academicYears: AcademicYear[];
-    groups: Group[];
-    teachers: Teacher[];
     activities: Activity[];
+    teachers: Teacher[];
     participationRecords: ParticipationRecord[];
+    groups: Group[];
   };
 }
 
 export const AdminReportView: React.FC<AdminReportViewProps> = ({ data }) => {
-    const [selectedYearId, setSelectedYearId] = useState<string>('all');
-    const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
+  const { academicYears, activities, teachers, participationRecords, groups } = data;
+  const [selectedYear, setSelectedYear] = useState<string>(academicYears.length > 0 ? academicYears[0].academicYearsId : '');
+  const [selectedActivity, setSelectedActivity] = useState<string>('all');
 
-    const filteredTeachers = useMemo(() => {
-        if (selectedGroupId === 'all') {
-            return data.teachers;
-        }
-        return data.teachers.filter(t => t.groupsId === selectedGroupId);
-    }, [data.teachers, selectedGroupId]);
+  const filteredActivities = useMemo(() => {
+    return activities.filter(a => a.academicYearsId === selectedYear);
+  }, [selectedYear, activities]);
 
-    const filteredActivities = useMemo(() => {
-        if (selectedYearId === 'all') {
-            return data.activities;
-        }
-        return data.activities.filter(a => a.academicYearsId === selectedYearId);
-    }, [data.activities, selectedYearId]);
-
-    const participationStats = useMemo(() => {
-        const stats: Record<string, Record<ParticipationStatus, number> & { name: string, totalActivities: number, participated: number }> = {};
-        const activityIds = new Set(filteredActivities.map(a => a.activitiesId));
-
-        for (const teacher of filteredTeachers) {
-            stats[teacher.usersId] = {
+  const reportData = useMemo(() => {
+    if (selectedActivity === 'all') {
+        const summary: Record<string, Record<ParticipationStatus, number> & { name: string, group: string }> = {};
+        teachers.forEach(teacher => {
+            summary[teacher.usersId] = {
                 name: teacher.name,
-                totalActivities: activityIds.size,
+                group: groups.find(g => g.groupsId === teacher.groupsId)?.name || 'N/A',
                 [ParticipationStatus.ORGANIZER]: 0,
                 [ParticipationStatus.PARTICIPATED]: 0,
                 [ParticipationStatus.LATE]: 0,
                 [ParticipationStatus.LEFT_EARLY]: 0,
                 [ParticipationStatus.ABSENT]: 0,
-                participated: 0,
             };
-        }
+        });
+
+        participationRecords
+            .filter(pr => filteredActivities.some(act => act.activitiesId === pr.activityId))
+            .forEach(pr => {
+                if (summary[pr.teacherUsersId]) {
+                    summary[pr.teacherUsersId][pr.status]++;
+                }
+            });
         
-        for (const record of data.participationRecords) {
-            if (stats[record.usersId] && activityIds.has(record.activitiesId)) {
-                if(record.status in stats[record.usersId]) {
-                    stats[record.usersId][record.status]++;
-                }
-                if (record.status === ParticipationStatus.PARTICIPATED || record.status === ParticipationStatus.LATE || record.status === ParticipationStatus.LEFT_EARLY) {
-                    stats[record.usersId].participated++;
-                }
-            }
-        }
-        return Object.values(stats);
+        const summaryList = Object.values(summary);
+        summaryList.sort((a, b) => {
+            if (a.group < b.group) return -1;
+            if (a.group > b.group) return 1;
+            if (a.name < b.name) return -1;
+            if (a.name > b.name) return 1;
+            return 0;
+        });
+        return summaryList;
+    } else {
+        const singleActivityData = participationRecords
+            .filter(pr => pr.activityId === selectedActivity)
+            .map(pr => {
+                const teacher = teachers.find(t => t.usersId === pr.teacherUsersId);
+                const group = groups.find(g => g.groupsId === teacher?.groupsId);
+                return {
+                    teacherName: teacher?.name || 'Unknown',
+                    groupName: group?.name || 'Unknown',
+                    status: pr.status,
+                };
+            });
+        
+        singleActivityData.sort((a, b) => {
+            if (a.groupName < b.groupName) return -1;
+            if (a.groupName > b.groupName) return 1;
+            if (a.teacherName < b.teacherName) return -1;
+            if (a.teacherName > b.teacherName) return 1;
+            return 0;
+        });
 
-    }, [data.participationRecords, filteredTeachers, filteredActivities]);
+        return singleActivityData;
+    }
+  }, [selectedActivity, filteredActivities, teachers, groups, participationRecords]);
 
-    return (
-        <Card title="Báo cáo tham gia hoạt động">
-            <div className="flex flex-col md:flex-row gap-4 mb-6">
-                <div className="flex-1">
-                    <label htmlFor="year-filter" className="block text-sm font-medium text-gray-700">Lọc theo năm học</label>
-                    <select
-                        id="year-filter"
-                        value={selectedYearId}
-                        onChange={(e) => setSelectedYearId(e.target.value)}
-                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                    >
-                        <option value="all">Tất cả năm học</option>
-                        {data.academicYears.map(year => (
-                            <option key={year.academicYearsId} value={year.academicYearsId}>{year.name}</option>
-                        ))}
-                    </select>
-                </div>
-                <div className="flex-1">
-                    <label htmlFor="group-filter" className="block text-sm font-medium text-gray-700">Lọc theo tổ chuyên môn</label>
-                    <select
-                        id="group-filter"
-                        value={selectedGroupId}
-                        onChange={(e) => setSelectedGroupId(e.target.value)}
-                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                    >
-                        <option value="all">Tất cả các tổ</option>
-                        {data.groups.map(group => (
-                            <option key={group.groupsId} value={group.groupsId}>{group.name}</option>
-                        ))}
-                    </select>
-                </div>
-            </div>
-
-            <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Giáo viên</th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Có tham gia</th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Đến trễ</th>
-                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Về sớm</th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vắng</th>
-                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổng số buổi</th>
+  return (
+    <Card title="Báo cáo tình hình tham gia hoạt động">
+      <div className="flex flex-wrap gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+        <div>
+          <label htmlFor="year-select" className="block text-sm font-medium text-gray-700 mb-1">Năm học</label>
+          <select id="year-select" value={selectedYear} onChange={e => {setSelectedYear(e.target.value); setSelectedActivity('all');}} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+            {academicYears.map(year => <option key={year.academicYearsId} value={year.academicYearsId}>{year.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="activity-select" className="block text-sm font-medium text-gray-700 mb-1">Hoạt động</label>
+          <select id="activity-select" value={selectedActivity} onChange={e => setSelectedActivity(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+            <option value="all">Thống kê cả năm</option>
+            {filteredActivities.map(act => <option key={act.activitiesId} value={act.activitiesId}>{act.name}</option>)}
+          </select>
+        </div>
+      </div>
+      
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+                {selectedActivity === 'all' ? (
+                    <tr>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Giáo viên</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổ chuyên môn</th>
+                        <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Tổ chức</th>
+                        <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Tham gia</th>
+                        <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Đi muộn</th>
+                        <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Vắng giữa buổi</th>
+                        <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Vắng cả buổi</th>
+                    </tr>
+                ) : (
+                    <tr>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Giáo viên</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổ chuyên môn</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trạng thái</th>
+                    </tr>
+                )}
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+                {selectedActivity === 'all' ? (
+                    (reportData as any[]).map((row, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.name}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.group}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{row[ParticipationStatus.ORGANIZER]}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{row[ParticipationStatus.PARTICIPATED]}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{row[ParticipationStatus.LATE]}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{row[ParticipationStatus.LEFT_EARLY]}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{row[ParticipationStatus.ABSENT]}</td>
                         </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {participationStats.map(stat => (
-                            <tr key={stat.name}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{stat.name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stat.participated}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stat[ParticipationStatus.LATE]}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stat[ParticipationStatus.LEFT_EARLY]}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stat[ParticipationStatus.ABSENT]}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stat.totalActivities}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </Card>
-    );
+                    ))
+                ) : (
+                    (reportData as any[]).map((row, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.teacherName}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.groupName}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><ParticipationBadge status={row.status} /></td>
+                        </tr>
+                    ))
+                )}
+            </tbody>
+        </table>
+      </div>
+    </Card>
+  );
 };

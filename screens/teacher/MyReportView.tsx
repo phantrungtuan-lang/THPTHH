@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useMemo } from 'react';
 import { Card } from '../../components/Card';
-import { ParticipationBadge } from '../../components/ParticipationBadge';
 import { User, Activity, ParticipationRecord, AcademicYear } from '../../types';
+import { ParticipationBadge } from '../../components/ParticipationBadge';
 
 interface MyReportViewProps {
   currentUser: User;
@@ -9,60 +10,61 @@ interface MyReportViewProps {
     activities: Activity[];
     participationRecords: ParticipationRecord[];
     academicYears: AcademicYear[];
-  };
+  }
 }
 
 export const MyReportView: React.FC<MyReportViewProps> = ({ currentUser, data }) => {
-    const [selectedYearId, setSelectedYearId] = useState<string>('all');
-    
-    const myParticipationHistory = useMemo(() => {
-        const myRecords = data.participationRecords.filter(p => p.usersId === currentUser.usersId);
-        const activitiesMap = new Map(data.activities.map(a => [a.activitiesId, a]));
+  const { activities, participationRecords, academicYears } = data;
+  
+  const myParticipation = useMemo(() => {
+    return participationRecords
+      .filter(pr => pr.teacherUsersId === currentUser.usersId)
+      .map(pr => {
+        const activity = activities.find(a => a.activitiesId === pr.activityId);
+        const academicYear = academicYears.find(ay => ay.academicYearsId === activity?.academicYearsId);
+        return {
+          ...pr,
+          activityName: activity?.name || 'Unknown Activity',
+          activityDateRaw: activity?.date,
+          activityDate: activity ? new Date(activity.date).toLocaleDateString('vi-VN') : 'N/A',
+          academicYearName: academicYear?.name || 'N/A',
+        };
+      })
+      .sort((a, b) => {
+        const dateA = a.activityDateRaw ? new Date(a.activityDateRaw).getTime() : 0;
+        const dateB = b.activityDateRaw ? new Date(b.activityDateRaw).getTime() : 0;
+        return dateB - dateA;
+      });
+  }, [currentUser.usersId, participationRecords, activities, academicYears]);
 
-        return myRecords
-            .map(record => {
-                const activity = activitiesMap.get(record.activitiesId);
-                if (!activity) return null;
-                return { ...record, activity };
-            })
-            .filter((record): record is ParticipationRecord & { activity: Activity } => record !== null)
-            .filter(record => selectedYearId === 'all' || record.activity.academicYearsId === selectedYearId)
-            .sort((a, b) => new Date(b.activity.date).getTime() - new Date(a.activity.date).getTime());
-
-    }, [currentUser.usersId, data.participationRecords, data.activities, selectedYearId]);
-
-    return (
-        <Card title="Lịch sử tham gia hoạt động của tôi">
-            <div className="mb-6">
-                <label htmlFor="year-filter-teacher" className="block text-sm font-medium text-gray-700">Lọc theo năm học</label>
-                <select
-                    id="year-filter-teacher"
-                    value={selectedYearId}
-                    onChange={(e) => setSelectedYearId(e.target.value)}
-                    className="mt-1 block w-full md:w-1/2 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                >
-                    <option value="all">Tất cả năm học</option>
-                    {data.academicYears.map(year => (
-                        <option key={year.academicYearsId} value={year.academicYearsId}>{year.name}</option>
-                    ))}
-                </select>
-            </div>
-
-            <div className="space-y-3">
-                {myParticipationHistory.length > 0 ? (
-                    myParticipationHistory.map(record => (
-                        <div key={record.participationRecordsId} className="flex justify-between items-center p-4 bg-white shadow rounded-lg border border-gray-200">
-                           <div>
-                             <p className="font-semibold text-gray-800">{record.activity.name}</p>
-                             <p className="text-sm text-gray-500">{new Date(record.activity.date).toLocaleDateString('vi-VN')}</p>
-                           </div>
-                           <ParticipationBadge status={record.status} />
-                        </div>
-                    ))
-                ) : (
-                    <p className="text-center text-gray-500 py-4">Không có dữ liệu tham gia nào.</p>
+  return (
+    <Card title={`Báo cáo tham gia hoạt động của ${currentUser.name}`}>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+                <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Năm học</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hoạt động</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ngày</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trạng thái</th>
+                </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+                {myParticipation.length > 0 ? myParticipation.map(record => (
+                    <tr key={record.participationRecordsId} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.academicYearName}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{record.activityName}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.activityDate}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm"><ParticipationBadge status={record.status} /></td>
+                    </tr>
+                )) : (
+                    <tr>
+                        <td colSpan={4} className="text-center py-10 text-gray-500">Chưa có dữ liệu tham gia.</td>
+                    </tr>
                 )}
-            </div>
-        </Card>
-    );
+            </tbody>
+        </table>
+      </div>
+    </Card>
+  );
 };
