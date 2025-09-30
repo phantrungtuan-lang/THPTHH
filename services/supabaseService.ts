@@ -8,7 +8,28 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- Case Conversion Helpers ---
+
+// Explicit mapping to prevent incorrect singularization of keys.
+const keyMap: { [key: string]: string } = {
+  usersId: 'users_id',
+  groupsId: 'groups_id',
+  leaderUsersId: 'leader_users_id',
+  academicYearsId: 'academic_years_id',
+  activitiesId: 'activities_id',
+  teacherUsersId: 'teacher_users_id',
+  participationRecordsId: 'participation_records_id'
+};
+
+// Automatically create the reverse mapping for converting from snake_case to camelCase.
+const reverseKeyMap: { [key: string]: string } = Object.entries(keyMap).reduce((acc, [key, value]) => {
+  acc[value] = key;
+  return acc;
+}, {} as { [key: string]: string });
+
+
 const toCamel = (s: string): string => {
+  // Prioritize the explicit map for accuracy.
+  if (reverseKeyMap[s]) return reverseKeyMap[s];
   return s.replace(/([-_][a-z])/ig, ($1) => {
     return $1.toUpperCase()
       .replace('-', '')
@@ -17,6 +38,9 @@ const toCamel = (s: string): string => {
 };
 
 const toSnake = (s: string): string => {
+  // Prioritize the explicit map for accuracy.
+  if (keyMap[s]) return keyMap[s];
+  // Fallback for other keys (e.g., 'name', 'email').
   return s.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 };
 
@@ -40,14 +64,14 @@ const convertKeys = (obj: any, converter: (s: string) => string): any => {
 
 // --- Primary Key Helper ---
 const getPrimaryKeyInfo = (tableName: string) => {
-    const keyMap: { [key: string]: { snake: string, camel: string } } = {
+    const pkMap: { [key: string]: { snake: string, camel: string } } = {
         'users': { snake: 'users_id', camel: 'usersId' },
         'academic_years': { snake: 'academic_years_id', camel: 'academicYearsId' },
         'groups': { snake: 'groups_id', camel: 'groupsId' },
         'activities': { snake: 'activities_id', camel: 'activitiesId' },
         'participation_records': { snake: 'participation_records_id', camel: 'participationRecordsId' },
     };
-    const info = keyMap[tableName];
+    const info = pkMap[tableName];
     if (!info) {
         throw new Error(`No primary key mapping found for table "${tableName}".`);
     }
