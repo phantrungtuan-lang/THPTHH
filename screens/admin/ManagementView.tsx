@@ -61,7 +61,6 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
         setIsSaving(true);
 
         let handler;
-
         switch (modal.type) {
             case "user": handler = handlers.userHandlers; break;
             case "group": handler = handlers.groupHandlers; break;
@@ -75,26 +74,26 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
         }
 
         try {
-            const payload = { ...formData };
+            const dataToSubmit = { ...formData };
             
-            // For edit mode, if password is empty string, do not send it for update
-            if (modal.mode === 'edit' && 'password' in payload && payload.password === '') {
-                delete payload.password;
+            // For 'edit' mode, if the password field exists and is empty,
+            // remove it from the payload so it doesn't overwrite the existing password.
+            if (modal.mode === 'edit' && 'password' in dataToSubmit && dataToSubmit.password === '') {
+                delete dataToSubmit.password;
             }
 
             if (modal.mode === "add") {
-                await handler.add(payload);
+                await handler.add(dataToSubmit);
             } else {
-                await handler.update(payload);
+                await handler.update(dataToSubmit);
             }
+            closeModal(); // Close modal on success
         } catch (error: any) {
             console.error("Failed to save data:", error);
             const errorMessage = error.message || "Không rõ nguyên nhân.";
             alert(`Đã có lỗi xảy ra khi lưu dữ liệu.\n\nChi tiết: ${errorMessage}`);
         } finally {
             setIsSaving(false);
-            // Only close modal on success, so user can see the error and try again
-            // closeModal(); 
         }
     };
 

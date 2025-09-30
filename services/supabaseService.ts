@@ -8,35 +8,41 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- Case Conversion Helpers ---
+// Converts snake_case_string to camelCaseString
 const toCamel = (s: string): string => {
-  return s.split('_').reduce((acc, part, i) => {
-    if (i === 0) return part;
-    return acc + part.charAt(0).toUpperCase() + part.slice(1);
-  }, '');
+  return s.replace(/([-_][a-z])/ig, ($1) => {
+    return $1.toUpperCase()
+      .replace('-', '')
+      .replace('_', '');
+  });
 };
-const toSnake = (s: string) => s.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 
+// Converts camelCaseString to snake_case_string
+const toSnake = (s: string): string => {
+  return s.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+};
+
+// Recursively converts keys of an object or array of objects using a converter function
 const convertKeys = (obj: any, converter: (s: string) => string): any => {
     if (Array.isArray(obj)) {
         return obj.map(v => convertKeys(v, converter));
     }
-    // Use a more robust check for objects
-    if (obj !== null && typeof obj === 'object' && !Array.isArray(obj)) {
+    // Check if it's a plain object (and not null, a Date, etc.)
+    if (obj && typeof obj === 'object' && obj.constructor === Object) {
         const newObj: { [key: string]: any } = {};
-        for (const key in obj) {
-            // Ensure we only process own properties
-            if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                let value = obj[key];
-                // When converting to snake_case for DB, if a field is an FK and is empty/undefined, make it null
-                if (converter === toSnake && key.endsWith('Id') && (value === '' || value === undefined)) {
-                    value = null;
-                }
-                newObj[converter(key)] = convertKeys(value, converter);
+        for (const key of Object.keys(obj)) {
+            let value = obj[key];
+            // When converting to snake_case for the DB, if a field is a Foreign Key (ending in 'Id')
+            // and its value is empty string or undefined, convert it to null for DB integrity.
+            if (converter === toSnake && key.endsWith('Id') && (value === '' || value === undefined)) {
+                value = null;
             }
+            // Convert the key and recursively convert the value
+            newObj[converter(key)] = convertKeys(value, converter);
         }
         return newObj;
     }
-    return obj;
+    return obj; // Return primitives and other types as is
 };
 
 
@@ -46,10 +52,9 @@ const handleError = (error: any, context: string) => {
     const message = error.message || 'An unknown error occurred.';
     console.error(`Error in ${context}:`, error);
 
-    // Add a developer hint about Row Level Security, as it's a common issue.
     if (message.includes('permission denied')) {
-        const operation = context.split(' ')[0].toLowerCase(); // e.g., "getall", "add"
-        const tableName = context.split(' ').pop(); // Gets the last word, likely the table name
+        const operation = context.split(' ')[0].toLowerCase();
+        const tableName = context.split(' ').pop();
         let policyType = 'READ (SELECT)';
         if (operation.includes('add')) policyType = 'CREATE (INSERT)';
         if (operation.includes('update')) policyType = 'UPDATE';
@@ -61,7 +66,6 @@ const handleError = (error: any, context: string) => {
             `You may need to create or modify a policy in your Supabase dashboard.`
         );
     }
-    // Throw a new, cleaner error object that will be caught by the UI layer.
     throw new Error(message);
 };
 
@@ -104,17 +108,18 @@ export const removeUser = (id: string) => remove('users', id);
 
 
 export const updateParticipationBatch = async (activityId: string, newRecords: Omit<ParticipationRecord, 'id'>[]) => {
-    // 1. Delete all existing records for this activity
-    // FIX: Use snake_case 'activity_id' for the column name in the query.
+    // 1. Delete all existing records for this activity to ensure a clean update.
     const { error: deleteError } = await supabase
         .from('participation_records')
         .delete()
-        .eq('activity_id', activityId);
+        .eq('activity_id', activityId); // Use correct snake_case column name
 
     if (deleteError) handleError(deleteError, `updateParticipationBatch (delete) for activity ${activityId}`);
 
-    // 2. Insert the new batch of records
+    // 2. Insert the new batch of records if there are any.
     if (newRecords.length > 0) {
+        // The generic 'add' function can't be used here because we're inserting a batch, not a single item.
+        // So, we convert keys to snake_case manually before inserting.
         const snakeRecords = newRecords.map(r => convertKeys(r, toSnake));
         const { error: insertError } = await supabase
             .from('participation_records')
