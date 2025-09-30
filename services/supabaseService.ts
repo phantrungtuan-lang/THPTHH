@@ -7,6 +7,34 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// --- Case Conversion Helpers ---
+const toCamel = (s: string) => s.replace(/_([a-z])/g, g => g[1].toUpperCase());
+const toSnake = (s: string) => s.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+
+const convertKeys = (obj: any, converter: (s: string) => string): any => {
+    if (Array.isArray(obj)) {
+        return obj.map(v => convertKeys(v, converter));
+    }
+    // Use a more robust check for objects
+    if (obj !== null && typeof obj === 'object' && !Array.isArray(obj)) {
+        const newObj: { [key: string]: any } = {};
+        for (const key in obj) {
+            // Ensure we only process own properties
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                let value = obj[key];
+                // When converting to snake_case for DB, if a field is an FK and is empty/undefined, make it null
+                if (converter === toSnake && key.endsWith('Id') && (value === '' || value === undefined)) {
+                    value = null;
+                }
+                newObj[converter(key)] = convertKeys(value, converter);
+            }
+        }
+        return newObj;
+    }
+    return obj;
+};
+
+
 // --- Generic Data Functions ---
 
 const handleError = (error: any, context: string) => {
@@ -35,20 +63,21 @@ const handleError = (error: any, context: string) => {
 export const getAll = async <T>(tableName: string): Promise<T[]> => {
     const { data, error } = await supabase.from(tableName).select('*');
     if (error) handleError(error, `getAll ${tableName}`);
-    return data as T[] || [];
+    return convertKeys(data, toCamel) as T[] || [];
 };
 
 export const add = async <T>(tableName: string, item: Omit<T, 'id'>): Promise<T> => {
-    // Wrap the single item in an array, which is the standard format for insert.
-    const { data, error } = await supabase.from(tableName).insert([item]).select().single();
+    const snakeItem = convertKeys(item, toSnake);
+    const { data, error } = await supabase.from(tableName).insert([snakeItem]).select().single();
     if (error) handleError(error, `add to ${tableName}`);
-    return data as T;
+    return convertKeys(data, toCamel) as T;
 };
 
 export const update = async <T>(tableName: string, id: string, item: Partial<T>): Promise<T> => {
-    const { data, error } = await supabase.from(tableName).update(item).eq('id', id).select().single();
+    const snakeItem = convertKeys(item, toSnake);
+    const { data, error } = await supabase.from(tableName).update(snakeItem).eq('id', id).select().single();
     if (error) handleError(error, `update in ${tableName}`);
-    return data as T;
+    return convertKeys(data, toCamel) as T;
 };
 
 export const remove = async (tableName: string, id: string): Promise<void> => {
@@ -71,18 +100,20 @@ export const removeUser = (id: string) => remove('users', id);
 
 export const updateParticipationBatch = async (activityId: string, newRecords: Omit<ParticipationRecord, 'id'>[]) => {
     // 1. Delete all existing records for this activity
+    // FIX: Use snake_case 'activity_id' for the column name in the query.
     const { error: deleteError } = await supabase
         .from('participation_records')
         .delete()
-        .eq('activityId', activityId);
+        .eq('activity_id', activityId);
 
     if (deleteError) handleError(deleteError, `updateParticipationBatch (delete) for activity ${activityId}`);
 
     // 2. Insert the new batch of records
     if (newRecords.length > 0) {
+        const snakeRecords = newRecords.map(r => convertKeys(r, toSnake));
         const { error: insertError } = await supabase
             .from('participation_records')
-            .insert(newRecords);
+            .insert(snakeRecords);
 
         if (insertError) handleError(insertError, `updateParticipationBatch (insert) for activity ${activityId}`);
     }
