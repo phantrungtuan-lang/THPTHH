@@ -1,25 +1,16 @@
-
 export enum UserRole {
-  ADMIN = 'Quản trị',
+  ADMIN = 'Admin',
   GROUP_LEADER = 'Tổ trưởng',
   TEACHER = 'Giáo viên',
-}
-
-export enum ParticipationStatus {
-  ORGANIZER = 'Tham gia tổ chức',
-  PARTICIPATED = 'Tham gia',
-  LATE = 'Đi muộn',
-  LEFT_EARLY = 'Vắng giữa buổi',
-  ABSENT = 'Vắng cả buổi',
 }
 
 export interface User {
   usersId: string;
   name: string;
   email: string;
+  password?: string;
   role: UserRole;
-  password: string;
-  groupsId?: string; 
+  groupsId?: string | null;
 }
 
 export interface AcademicYear {
@@ -30,12 +21,11 @@ export interface AcademicYear {
 export interface Group {
   groupsId: string;
   name: string;
-  leaderUsersId?: string;
+  leaderUsersId?: string | null;
 }
 
-// This is a derived type for display purposes
 export interface Teacher {
-  usersId: string;
+  usersId: string; // Corresponds to User.usersId
   name: string;
   groupsId: string;
 }
@@ -43,13 +33,21 @@ export interface Teacher {
 export interface Activity {
   activitiesId: string;
   name: string;
-  date: string; // ISO string
+  date: string; // ISO date string
   academicYearsId: string;
+}
+
+export enum ParticipationStatus {
+  ORGANIZER = 'Ban tổ chức',
+  PARTICIPATED = 'Có tham gia',
+  LATE = 'Đến trễ',
+  LEFT_EARLY = 'Về sớm',
+  ABSENT = 'Vắng',
 }
 
 export interface ParticipationRecord {
   participationRecordsId: string;
-  teacherUsersId: string;
+  usersId: string; // The teacher's user ID
   activitiesId: string;
   status: ParticipationStatus;
 }

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Card } from '../../components/Card';
-import { User, Activity, Teacher, ParticipationStatus, ParticipationRecord } from '../../types';
+import { ParticipationBadge } from '../../components/ParticipationBadge';
+import { User, Activity, Teacher, ParticipationRecord, AcademicYear, ParticipationStatus } from '../../types';
 
 interface ReportParticipationViewProps {
   currentUser: User;
@@ -8,103 +9,127 @@ interface ReportParticipationViewProps {
     activities: Activity[];
     teachers: Teacher[];
     participationRecords: ParticipationRecord[];
+    academicYears: AcademicYear[];
   };
   handlers: {
     participationRecordHandlers: any;
-  }
+  };
   onReportSaved: (activityId: string) => void;
 }
 
-type StatusMap = Record<string, ParticipationStatus>;
+type ParticipationState = Record<string, ParticipationStatus>;
 
 export const ReportParticipationView: React.FC<ReportParticipationViewProps> = ({ currentUser, data, handlers, onReportSaved }) => {
-  const { activities, teachers, participationRecords } = data;
-  const [selectedActivityId, setSelectedActivityId] = useState<string>(activities.length > 0 ? activities[0].activitiesId : '');
-  const [isSaving, setIsSaving] = useState(false);
-  
-  const groupTeachers = useMemo(() => {
-    return teachers.filter(t => t.groupsId === currentUser.groupsId);
-  }, [currentUser.groupsId, teachers]);
+    const [selectedActivityId, setSelectedActivityId] = useState<string>('');
+    const [participation, setParticipation] = useState<ParticipationState>({});
+    const [isSaving, setIsSaving] = useState(false);
 
-  const [statuses, setStatuses] = useState<StatusMap>({});
+    const groupTeachers = useMemo(() => {
+        return data.teachers.filter(t => t.groupsId === currentUser.groupsId);
+    }, [data.teachers, currentUser.groupsId]);
 
-  useEffect(() => {
-    if (selectedActivityId) {
-        const initialStatuses: StatusMap = {};
-        const existingRecords = participationRecords.filter(pr => pr.activitiesId === selectedActivityId);
+    useEffect(() => {
+        if (selectedActivityId) {
+            const initialParticipation: ParticipationState = {};
+            for (const teacher of groupTeachers) {
+                const existingRecord = data.participationRecords.find(
+                    p => p.activitiesId === selectedActivityId && p.usersId === teacher.usersId
+                );
+                initialParticipation[teacher.usersId] = existingRecord?.status || ParticipationStatus.PARTICIPATED;
+            }
+            setParticipation(initialParticipation);
+        } else {
+            setParticipation({});
+        }
+    }, [selectedActivityId, data.participationRecords, groupTeachers]);
 
-        groupTeachers.forEach(teacher => {
-            const record = existingRecords.find(pr => pr.teacherUsersId === teacher.usersId);
-            initialStatuses[teacher.usersId] = record ? record.status : ParticipationStatus.PARTICIPATED;
-        });
-        setStatuses(initialStatuses);
-    }
-  }, [selectedActivityId, groupTeachers, participationRecords]);
+    const handleStatusChange = (teacherId: string, status: ParticipationStatus) => {
+        setParticipation(prev => ({ ...prev, [teacherId]: status }));
+    };
 
-  const handleStatusChange = (teacherId: string, status: ParticipationStatus) => {
-    setStatuses(prev => ({...prev, [teacherId]: status}));
-  };
-
-  const handleSave = async () => {
-    if (isSaving) return;
-    setIsSaving(true);
+    const handleSubmit = async () => {
+        if (!selectedActivityId) {
+            alert('Vui lòng chọn một hoạt động.');
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const newRecords = Object.entries(participation).map(([usersId, status]) => ({
+                usersId,
+                activitiesId: selectedActivityId,
+                status,
+            }));
+            
+            await handlers.participationRecordHandlers.updateBatch(selectedActivityId, newRecords);
+            alert('Báo cáo đã được lưu thành công!');
+            onReportSaved(selectedActivityId);
+        } catch (error) {
+            console.error('Failed to save participation report:', error);
+            alert('Đã có lỗi xảy ra khi lưu báo cáo.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
     
-    const newRecords = Object.entries(statuses).map(([teacherId, status]) => ({
-        teacherUsersId: teacherId,
-        activitiesId: selectedActivityId,
-        status,
-    }));
-    
-    try {
-        await handlers.participationRecordHandlers.updateBatch(selectedActivityId, newRecords);
-        alert('Đã cập nhật báo cáo thành công!');
-        onReportSaved(selectedActivityId);
-    } catch (error: any) {
-        console.error("Failed to save participation records:", error);
-        const errorMessage = error.message || "Không rõ nguyên nhân.";
-        alert(`Có lỗi xảy ra khi lưu báo cáo.\n\nChi tiết: ${errorMessage}`);
-    } finally {
-        setIsSaving(false);
-    }
-  };
+    const sortedActivities = useMemo(() => {
+        return [...data.activities].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [data.activities]);
 
-  return (
-    <Card title="Báo cáo tình hình tham gia hoạt động của tổ">
-      <div className="mb-6">
-        <label htmlFor="activity-select-leader" className="block text-sm font-medium text-gray-700 mb-1">Chọn hoạt động</label>
-        <select id="activity-select-leader" value={selectedActivityId} onChange={e => setSelectedActivityId(e.target.value)} className="mt-1 block w-full md:w-1/2 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-          {activities.map(act => (
-            <option key={act.activitiesId} value={act.activitiesId}>{act.name} - {new Date(act.date).toLocaleDateString('vi-VN')}</option>
-          ))}
-        </select>
-      </div>
-      
-      <div className="space-y-4">
-        {groupTeachers.map(teacher => (
-            <div key={teacher.usersId} className="grid grid-cols-1 md:grid-cols-2 items-center gap-4 p-3 bg-gray-50 rounded-lg">
-                <p className="font-medium text-gray-800">{teacher.name}</p>
-                <select 
-                    value={statuses[teacher.usersId] || ''}
-                    onChange={e => handleStatusChange(teacher.usersId, e.target.value as ParticipationStatus)}
-                    className="w-full mt-1 md:mt-0 block pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+    return (
+        <Card title="Điểm danh tham gia hoạt động">
+            <div className="mb-6">
+                <label htmlFor="activity-select" className="block text-sm font-medium text-gray-700">Chọn hoạt động</label>
+                <select
+                    id="activity-select"
+                    value={selectedActivityId}
+                    onChange={(e) => setSelectedActivityId(e.target.value)}
+                    className="mt-1 block w-full md:w-1/2 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
                 >
-                    {Object.values(ParticipationStatus).map(status => (
-                        <option key={status} value={status}>{status}</option>
+                    <option value="">-- Chọn hoạt động --</option>
+                    {sortedActivities.map(activity => (
+                        <option key={activity.activitiesId} value={activity.activitiesId}>
+                            {activity.name} - {new Date(activity.date).toLocaleDateString('vi-VN')}
+                        </option>
                     ))}
                 </select>
             </div>
-        ))}
-      </div>
 
-      <div className="mt-6 text-right">
-        <button 
-          onClick={handleSave}
-          className="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-300"
-          disabled={!selectedActivityId || groupTeachers.length === 0 || isSaving}
-        >
-          {isSaving ? 'Đang lưu...' : 'Lưu báo cáo'}
-        </button>
-      </div>
-    </Card>
-  );
+            {selectedActivityId && (
+                <div>
+                    <h4 className="text-lg font-semibold text-gray-800 mb-4">Danh sách giáo viên trong tổ</h4>
+                    <div className="space-y-4">
+                        {groupTeachers.map(teacher => (
+                            <div key={teacher.usersId} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 bg-gray-50 rounded-lg">
+                                <p className="font-medium text-gray-900">{teacher.name}</p>
+                                <div className="flex items-center space-x-2 mt-2 sm:mt-0">
+                                    {Object.values(ParticipationStatus).filter(s => s !== ParticipationStatus.ORGANIZER).map(status => (
+                                        <button
+                                            key={status}
+                                            onClick={() => handleStatusChange(teacher.usersId, status)}
+                                            className={`px-3 py-1 text-xs font-medium rounded-full transition-transform transform hover:scale-105 ${
+                                                participation[teacher.usersId] === status
+                                                    ? 'ring-2 ring-offset-1 ring-indigo-500'
+                                                    : 'opacity-60 hover:opacity-100'
+                                            }`}
+                                        >
+                                           <ParticipationBadge status={status} />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-8 flex justify-end">
+                        <button 
+                            onClick={handleSubmit}
+                            disabled={isSaving}
+                            className="px-6 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300"
+                        >
+                            {isSaving ? 'Đang lưu...' : 'Lưu báo cáo'}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </Card>
+    );
 };
