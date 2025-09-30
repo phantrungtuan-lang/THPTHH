@@ -8,7 +8,12 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- Case Conversion Helpers ---
-const toCamel = (s: string) => s.replace(/_([a-z])/g, g => g[1].toUpperCase());
+const toCamel = (s: string): string => {
+  return s.split('_').reduce((acc, part, i) => {
+    if (i === 0) return part;
+    return acc + part.charAt(0).toUpperCase() + part.slice(1);
+  }, '');
+};
 const toSnake = (s: string) => s.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 
 const convertKeys = (obj: any, converter: (s: string) => string): any => {
