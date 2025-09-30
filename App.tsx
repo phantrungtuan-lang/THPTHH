@@ -53,16 +53,19 @@ const App: React.FC = () => {
     
     try {
         const [
+          loadedUsers, // Re-fetch users to get latest data after potential import
           loadedAcademicYears,
           loadedGroups,
           loadedActivities,
           loadedParticipationRecords,
         ] = await Promise.all([
+          api.getUsers(),
           api.getAcademicYears(),
           api.getGroups(),
           api.getActivities(),
           api.getParticipationRecords(),
         ]);
+        setUsers(loadedUsers);
         setAcademicYears(loadedAcademicYears);
         setGroups(loadedGroups);
         setActivities(loadedActivities);
@@ -162,6 +165,11 @@ const App: React.FC = () => {
           const newUser = await api.addUser({ ...item, password: item.password || '123' });
           setUsers([...users, newUser]);
           return newUser;
+      },
+      addBatch: async (items: Omit<User, 'usersId'>[]) => {
+          const newUsers = await api.addUsersBatch(items);
+          setUsers(prevUsers => [...prevUsers, ...newUsers]);
+          return newUsers;
       },
       update: async (updatedItem: User) => {
         const originalUser = users.find(u => u.usersId === updatedItem.usersId);

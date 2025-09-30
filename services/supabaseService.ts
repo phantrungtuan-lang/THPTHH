@@ -133,6 +133,13 @@ export const getActivities = () => getAll<Activity>('activities');
 export const getParticipationRecords = () => getAll<ParticipationRecord>('participation_records');
 
 export const addUser = (user: Omit<User, 'usersId'>) => add<User>('users', user);
+export const addUsersBatch = async (users: Omit<User, 'usersId'>[]): Promise<User[]> => {
+    const snakeUsers = convertKeys(users, toSnake);
+    const { data, error } = await supabase.from('users').insert(snakeUsers).select();
+    if (error) handleError(error, 'addUsersBatch');
+    return convertKeys(data, toCamel) as User[];
+};
+
 export const updateUser = (userWithId: User) => update<User>('users', userWithId);
 export const removeUser = (id: string) => remove('users', id);
 

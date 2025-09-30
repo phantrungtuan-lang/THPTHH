@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { Card } from '../../components/Card';
 import { Modal } from '../../components/Modal';
-import { PlusIcon, PencilIcon, TrashIcon, KeyIcon } from '../../components/icons';
+import { PlusIcon, PencilIcon, TrashIcon, KeyIcon, UploadIcon } from '../../components/icons';
 import { User, Group, Teacher, AcademicYear, Activity, UserRole } from '../../types';
 
 interface ManagementViewProps {
@@ -35,11 +36,26 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
     const [modal, setModal] = useState<ModalState | null>(null);
     const [formData, setFormData] = useState<any>({});
     const [isSaving, setIsSaving] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const openModal = (type: ModalState['type'], mode: ModalState['mode'], data?: any) => {
-        setModal({ type, mode, data });
-        setFormData(data || { role: UserRole.TEACHER }); // Default role to Teacher when adding a user
+    // Activity filters
+    const [activityYearFilter, setActivityYearFilter] = useState<string>('all');
+    const [activityDateFilter, setActivityDateFilter] = useState<string>('');
+
+    const openModal = (type: ModalState['type'], mode: ModalState['mode'], dataToEdit?: any) => {
+        setModal({ type, mode, data: dataToEdit });
+        if (mode === 'add') {
+             // Reset formData for 'add' mode to prevent stale data
+             if (type === 'user') {
+                setFormData({ role: UserRole.TEACHER });
+             } else {
+                setFormData({});
+             }
+        } else {
+            setFormData(dataToEdit || {});
+        }
     };
+
     const closeModal = () => {
         setModal(null);
         setFormData({});
@@ -47,19 +63,87 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const newFormData = { ...formData, [e.target.name]: e.target.value };
-        // When role changes to Admin, ensure groupsId is cleared.
         if (e.target.name === 'role' && e.target.value === UserRole.ADMIN) {
-            newFormData.groupsId = ''; // Will be converted to null for the DB
+            newFormData.groupsId = ''; 
         }
         setFormData(newFormData);
+    };
+    
+    const handleFileImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const fileData = await file.arrayBuffer();
+            const workbook = XLSX.read(fileData, { type: 'buffer' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+            const groupMap = new Map(data.groups.map(g => [g.name.toLowerCase(), g.groupsId]));
+            const existingEmails = new Set(data.users.map(u => u.email.toLowerCase()));
+            
+            const newUsers: Omit<User, 'usersId'>[] = [];
+            const failedImports: string[] = [];
+
+            json.forEach((row, index) => {
+                const name = row.name?.trim();
+                const email = row.email?.trim().toLowerCase();
+                const groupName = row.groupName?.trim().toLowerCase();
+                
+                if (!name || !email || !groupName) {
+                    failedImports.push(`Dòng ${index + 2}: Thiếu tên, email, hoặc tên tổ.`);
+                    return;
+                }
+                if (existingEmails.has(email)) {
+                    failedImports.push(`Dòng ${index + 2}: Email '${row.email}' đã tồn tại.`);
+                    return;
+                }
+                const groupsId = groupMap.get(groupName);
+                if (!groupsId) {
+                    failedImports.push(`Dòng ${index + 2}: Tổ '${row.groupName}' không tồn tại.`);
+                    return;
+                }
+
+                newUsers.push({
+                    name,
+                    email,
+                    groupsId,
+                    role: UserRole.TEACHER,
+                    password: '123' // Default password
+                });
+                existingEmails.add(email); // Prevent duplicate emails within the same file
+            });
+            
+            if (newUsers.length > 0) {
+                await handlers.userHandlers.addBatch(newUsers);
+            }
+
+            let alertMessage = `Hoàn tất import.\n\n- ${newUsers.length} giáo viên được thêm thành công.`;
+            if (failedImports.length > 0) {
+                alertMessage += `\n\n- ${failedImports.length} giáo viên không thể thêm:\n${failedImports.join('\n')}`;
+            }
+            alert(alertMessage);
+
+        } catch (error) {
+            console.error("Failed to import file:", error);
+            alert("Đã có lỗi xảy ra khi đọc hoặc xử lý file. Vui lòng kiểm tra lại định dạng file và dữ liệu.");
+        } finally {
+            // Reset file input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!modal || !modal.type || isSaving) return;
-
         setIsSaving(true);
-
         let handler;
         switch (modal.type) {
             case "user": handler = handlers.userHandlers; break;
@@ -72,22 +156,17 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                 setIsSaving(false);
                 return;
         }
-
         try {
             const dataToSubmit = { ...formData };
-            
-            // For 'edit' mode, if the password field exists and is empty,
-            // remove it from the payload so it doesn't overwrite the existing password.
             if (modal.mode === 'edit' && 'password' in dataToSubmit && dataToSubmit.password === '') {
                 delete dataToSubmit.password;
             }
-
             if (modal.mode === "add") {
                 await handler.add(dataToSubmit);
             } else {
                 await handler.update(dataToSubmit);
             }
-            closeModal(); // Close modal on success
+            closeModal();
         } catch (error: any) {
             console.error("Failed to save data:", error);
             const errorMessage = error.message || "Không rõ nguyên nhân.";
@@ -104,6 +183,16 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
         return data.teachers.filter(teacher => teacher.groupsId === selectedGroupId);
     }, [data.teachers, selectedGroupId]);
     
+    const filteredActivities = useMemo(() => {
+        return data.activities
+            .filter(activity => {
+                const yearMatch = activityYearFilter === 'all' || activity.academicYearsId === activityYearFilter;
+                const dateMatch = !activityDateFilter || new Date(activity.date).toDateString() === new Date(activityDateFilter).toDateString();
+                return yearMatch && dateMatch;
+            })
+            .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [data.activities, activityYearFilter, activityDateFilter]);
+
     const renderFormFields = () => {
         if (!modal) return null;
         switch (modal.type) {
@@ -122,7 +211,6 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                     <InputField name="name" label="Tên tổ" value={formData.name || ''} onChange={handleFormChange} required/>
                     <SelectField name="leaderUsersId" label="Tổ trưởng" value={formData.leaderUsersId || ''} onChange={handleFormChange} options={data.users.filter(u => u.role === UserRole.TEACHER || u.role === UserRole.GROUP_LEADER).map(t => ({value: t.usersId, label: t.name}))}/>
                  </>;
-            // "teacher" form is handled by "user" form now.
             case 'teacher': 
                  return <p>Vui lòng chỉnh sửa thông tin giáo viên thông qua mục 'Tài khoản'.</p>
             case 'year':
@@ -159,6 +247,13 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {renderModalContent()}
+            <input 
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileImport}
+                className="hidden"
+                accept=".xlsx, .xls, .csv"
+            />
             <ManagementCard title="Tài khoản" onAdd={() => openModal('user', 'add')}>
                 {data.users.map(user => {
                     const isCurrentUser = user.usersId === currentUser.usersId;
@@ -176,7 +271,16 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             <ManagementCard title="Tổ chuyên môn" onAdd={() => openModal('group', 'add')}>
                 {data.groups.map(group => <ItemRow key={group.groupsId} name={group.name} onEdit={() => openModal('group', 'edit', group)} onDelete={() => handlers.groupHandlers.remove(group.groupsId)}/>)}
             </ManagementCard>
-             <ManagementCard title="Giáo viên" onAdd={() => alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.")}>
+             <ManagementCard 
+                title="Giáo viên" 
+                onAdd={() => alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.")}
+                actions={
+                    <div className="flex items-center space-x-2">
+                        <button onClick={handleFileImportClick} className="flex items-center gap-1 text-sm text-white bg-green-500 px-3 py-1 rounded-md hover:bg-green-600"><UploadIcon/>Import</button>
+                        <button onClick={() => alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.")} className="flex items-center gap-1 text-sm text-white bg-indigo-500 px-3 py-1 rounded-md hover:bg-indigo-600"><PlusIcon/>Thêm</button>
+                    </div>
+                }
+             >
                 <div className="mb-4">
                     <label htmlFor="group-filter" className="block text-sm font-medium text-gray-700">Lọc theo tổ</label>
                     <select
@@ -205,15 +309,43 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                 {data.academicYears.map(year => <ItemRow key={year.academicYearsId} name={year.name} onEdit={() => openModal('year', 'edit', year)} onDelete={() => handlers.academicYearHandlers.remove(year.academicYearsId)}/>)}
             </ManagementCard>
             <ManagementCard title="Hoạt động" onAdd={() => openModal('activity', 'add')}>
-                 {data.activities.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(activity => <ItemRow key={activity.activitiesId} name={`${activity.name} - ${new Date(activity.date).toLocaleDateString('vi-VN')}`} onEdit={() => openModal('activity', 'edit', activity)} onDelete={() => handlers.activityHandlers.remove(activity.activitiesId)}/>)}
+                <div className="flex flex-col md:flex-row gap-4 mb-4">
+                    <div className="flex-1">
+                         <label htmlFor="year-activity-filter" className="block text-sm font-medium text-gray-700">Năm học</label>
+                         <select
+                            id="year-activity-filter"
+                            value={activityYearFilter}
+                            onChange={(e) => setActivityYearFilter(e.target.value)}
+                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                        >
+                            <option value="all">Tất cả năm học</option>
+                            {data.academicYears.map(year => (
+                                <option key={year.academicYearsId} value={year.academicYearsId}>{year.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="flex-1">
+                        <label htmlFor="date-activity-filter" className="block text-sm font-medium text-gray-700">Ngày</label>
+                        <input
+                            id="date-activity-filter"
+                            type="date"
+                            value={activityDateFilter}
+                            onChange={(e) => setActivityDateFilter(e.target.value)}
+                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                        />
+                    </div>
+                </div>
+                 {filteredActivities.map(activity => <ItemRow key={activity.activitiesId} name={`${activity.name} - ${new Date(activity.date).toLocaleDateString('vi-VN')}`} onEdit={() => openModal('activity', 'edit', activity)} onDelete={() => handlers.activityHandlers.remove(activity.activitiesId)}/>)}
             </ManagementCard>
         </div>
     );
 };
 
-// Helper components for ManagementView
-const ManagementCard: React.FC<{title: string, onAdd: () => void, children: React.ReactNode}> = ({ title, onAdd, children }) => (
-    <Card title={title} actions={<button onClick={onAdd} className="flex items-center gap-1 text-sm text-white bg-indigo-500 px-3 py-1 rounded-md hover:bg-indigo-600"><PlusIcon/>Thêm</button>}>
+// Helper components
+const ManagementCard: React.FC<{title: string, onAdd?: () => void, children: React.ReactNode, actions?: React.ReactNode}> = ({ title, onAdd, children, actions }) => (
+    <Card 
+        title={title} 
+        actions={actions || (onAdd && <button onClick={onAdd} className="flex items-center gap-1 text-sm text-white bg-indigo-500 px-3 py-1 rounded-md hover:bg-indigo-600"><PlusIcon/>Thêm</button>)}>
         <div className="space-y-2 max-h-60 overflow-y-auto pr-2">{children}</div>
     </Card>
 );
