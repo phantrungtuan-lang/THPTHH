@@ -46,7 +46,12 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
     };
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        const newFormData = { ...formData, [e.target.name]: e.target.value };
+        // When role changes to Admin, ensure groupId is cleared.
+        if (e.target.name === 'role' && e.target.value === UserRole.ADMIN) {
+            newFormData.groupId = ''; // Will be converted to null for the DB
+        }
+        setFormData(newFormData);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -82,12 +87,14 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             } else {
                 await handler.update(payload);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to save data:", error);
-            alert("Đã có lỗi xảy ra khi lưu dữ liệu.");
+            const errorMessage = error.message || "Không rõ nguyên nhân.";
+            alert(`Đã có lỗi xảy ra khi lưu dữ liệu.\n\nChi tiết: ${errorMessage}`);
         } finally {
             setIsSaving(false);
-            closeModal();
+            // Only close modal on success, so user can see the error and try again
+            // closeModal(); 
         }
     };
 
