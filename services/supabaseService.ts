@@ -147,7 +147,7 @@ export const removeUser = async (id: string): Promise<void> => {
     const { error: groupUpdateError } = await supabase
       .from('groups')
       .update({ leader_users_id: null })
-      .match({ leader_users_id: id });
+      .eq('leader_users_id', id);
 
     if (groupUpdateError) {
       console.error('Error unsetting group leader:', groupUpdateError);
@@ -158,7 +158,7 @@ export const removeUser = async (id: string): Promise<void> => {
     const { error: participationDeleteError } = await supabase
       .from('participation_records')
       .delete()
-      .match({ teacher_users_id: id });
+      .eq('teacher_users_id', id);
     
     if (participationDeleteError) {
         console.error('Error deleting participation records:', participationDeleteError);
@@ -169,7 +169,7 @@ export const removeUser = async (id: string): Promise<void> => {
     const { error: userDeleteError } = await supabase
         .from('users')
         .delete()
-        .match({ usersId: id });
+        .eq('users_id', id);
 
     if (userDeleteError) {
         console.error('Error deleting user:', userDeleteError);
@@ -178,13 +178,25 @@ export const removeUser = async (id: string): Promise<void> => {
 };
 
 export const updateParticipationBatch = async (activityId: string, newRecords: Omit<ParticipationRecord, 'participationRecordsId'>[]) => {
+    const teacherIdsForGroup = newRecords.map(record => record.teacherUsersId);
+
+    // If there are no teachers in the group for this report, there's nothing to do.
+    if (teacherIdsForGroup.length === 0) {
+        return;
+    }
+
+    // Step 1: Delete existing records ONLY for the specific teachers in this group and for this activity.
+    // This is the key fix: it no longer deletes records for all teachers in the activity.
     const { error: deleteError } = await supabase
         .from('participation_records')
         .delete()
-        .eq('activity_id', activityId); // FIX: Use the correct snake_case foreign key 'activity_id'
+        .eq('activity_id', activityId)
+        .in('teacher_users_id', teacherIdsForGroup);
 
     if (deleteError) handleError(deleteError, `updateParticipationBatch (delete) for activity ${activityId}`);
 
+    // Step 2: Insert the new set of records for these teachers.
+    // This is effectively an "upsert" operation done in two steps.
     if (newRecords.length > 0) {
         const snakeRecords = newRecords.map(r => convertKeys(r, toSnake));
         const { error: insertError } = await supabase
