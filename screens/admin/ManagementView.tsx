@@ -49,54 +49,44 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!modal || !modal.type || isSaving) return;
-        
-        setIsSaving(true);
+import { convertPayload } from "@/utils/convertPayload";
 
-        let handler;
-        let dataToSubmit: any = { ...formData };
-        if (modal.type === 'user' && !dataToSubmit.password) {
-            delete dataToSubmit.password;
-        }
+const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modal || !modal.type || isSaving) return;
 
-        // --- FIX: Convert all potential empty string foreign keys to null ---
-        // This is crucial because a "" value is invalid for a foreign key column in the database.
-        const foreignKeyFields: (keyof typeof dataToSubmit)[] = ['groupId', 'leaderId', 'academicYearId'];
-        foreignKeyFields.forEach(field => {
-            if (dataToSubmit[field] === '') {
-                dataToSubmit[field] = null;
-            }
-        });
+    setIsSaving(true);
 
+    let handler;
 
-        switch (modal.type) {
-            case 'user': handler = handlers.userHandlers; break;
-            case 'group': handler = handlers.groupHandlers; break;
-            case 'teacher': handler = handlers.teacherHandlers; break; // Uses userHandlers underneath
-            case 'year': handler = handlers.academicYearHandlers; break;
-            case 'activity': handler = handlers.activityHandlers; break;
-            default:
-                console.error('Unknown modal type:', modal.type);
-                setIsSaving(false);
-                return;
-        }
-
-        try {
-            if (modal.mode === 'add') {
-                await handler.add(dataToSubmit);
-            } else {
-                await handler.update(dataToSubmit);
-            }
-        } catch (error) {
-            console.error("Failed to save data:", error);
-            alert("Đã có lỗi xảy ra khi lưu dữ liệu.");
-        } finally {
+    switch (modal.type) {
+        case "user": handler = handlers.userHandlers; break;
+        case "group": handler = handlers.groupHandlers; break;
+        case "teacher": handler = handlers.teacherHandlers; break;
+        case "year": handler = handlers.academicYearHandlers; break;
+        case "activity": handler = handlers.activityHandlers; break;
+        default:
+            console.error("Unknown modal type:", modal.type);
             setIsSaving(false);
-            closeModal();
+            return;
+    }
+
+    try {
+        const { id, payload } = convertPayload(formData, modal.mode);
+
+        if (modal.mode === "add") {
+            await handler.add(payload);
+        } else {
+            await handler.update({ id, ...payload });
         }
-    };
+    } catch (error) {
+        console.error("Failed to save data:", error);
+        alert("Đã có lỗi xảy ra khi lưu dữ liệu.");
+    } finally {
+        setIsSaving(false);
+        closeModal();
+    }
+};
 
     const filteredTeachers = useMemo(() => {
         if (!selectedGroupId || selectedGroupId === 'all') {
