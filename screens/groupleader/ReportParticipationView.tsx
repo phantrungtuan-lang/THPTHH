@@ -49,7 +49,6 @@ export const ReportParticipationView: React.FC<ReportParticipationViewProps> = (
     if (isSaving) return;
     setIsSaving(true);
     
-    // Prepare records without the PK field, as Supabase will generate it.
     const newRecords = Object.entries(statuses).map(([teacherId, status]) => ({
         teacherUsersId: teacherId,
         activitiesId: selectedActivityId,
@@ -60,9 +59,10 @@ export const ReportParticipationView: React.FC<ReportParticipationViewProps> = (
         await handlers.participationRecordHandlers.updateBatch(selectedActivityId, newRecords);
         alert('Đã cập nhật báo cáo thành công!');
         onReportSaved(selectedActivityId);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Failed to save participation records:", error);
-        alert("Có lỗi xảy ra khi lưu báo cáo.");
+        const errorMessage = error.message || "Không rõ nguyên nhân.";
+        alert(`Có lỗi xảy ra khi lưu báo cáo.\n\nChi tiết: ${errorMessage}`);
     } finally {
         setIsSaving(false);
     }

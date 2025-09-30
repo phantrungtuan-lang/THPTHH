@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Card } from '../../components/Card';
 import { Modal } from '../../components/Modal';
-import { PlusIcon, PencilIcon, TrashIcon, KeyIcon, UploadIcon } from '../../components/icons';
+import { PlusIcon, PencilIcon, TrashIcon, KeyIcon, UploadIcon, DownloadIcon } from '../../components/icons';
 import { User, Group, Teacher, AcademicYear, Activity, UserRole } from '../../types';
 
 interface ManagementViewProps {
@@ -45,7 +45,6 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
     const openModal = (type: ModalState['type'], mode: ModalState['mode'], dataToEdit?: any) => {
         setModal({ type, mode, data: dataToEdit });
         if (mode === 'add') {
-             // Reset formData for 'add' mode to prevent stale data
              if (type === 'user') {
                 setFormData({ role: UserRole.TEACHER });
              } else {
@@ -73,6 +72,25 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
         fileInputRef.current?.click();
     };
 
+    const handleDownloadTemplate = () => {
+        const headers = ["name", "email", "groupName"];
+        const worksheet = XLSX.utils.json_to_sheet([
+            { name: "Nguyễn Văn A", email: "nguyenvana@example.com", groupName: "Tổ Toán" },
+            { name: "Trần Thị B", email: "tranthib@example.com", groupName: "Tổ Lý - Tin" }
+        ], { header: headers });
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Mau_Danh_Sach_Giao_Vien");
+
+        // Set column widths for better readability
+        worksheet["!cols"] = [
+            { wch: 30 }, // name
+            { wch: 30 }, // email
+            { wch: 20 }  // groupName
+        ];
+
+        XLSX.writeFile(workbook, "File_Mau_Import_Tai_Khoan.xlsx");
+    };
+
     const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -84,7 +102,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             const worksheet = workbook.Sheets[sheetName];
             const json: any[] = XLSX.utils.sheet_to_json(worksheet);
 
-            const groupMap = new Map(data.groups.map(g => [g.name.toLowerCase(), g.groupsId]));
+            const groupMap = new Map(data.groups.map(g => [g.name.toLowerCase().trim(), g.groupsId]));
             const existingEmails = new Set(data.users.map(u => u.email.toLowerCase()));
             
             const newUsers: Omit<User, 'usersId'>[] = [];
@@ -123,9 +141,9 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                 await handlers.userHandlers.addBatch(newUsers);
             }
 
-            let alertMessage = `Hoàn tất import.\n\n- ${newUsers.length} giáo viên được thêm thành công.`;
+            let alertMessage = `Hoàn tất import.\n\n- ${newUsers.length} tài khoản được thêm thành công.`;
             if (failedImports.length > 0) {
-                alertMessage += `\n\n- ${failedImports.length} giáo viên không thể thêm:\n${failedImports.join('\n')}`;
+                alertMessage += `\n\n- ${failedImports.length} tài khoản không thể thêm:\n${failedImports.join('\n')}`;
             }
             alert(alertMessage);
 
@@ -133,7 +151,6 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             console.error("Failed to import file:", error);
             alert("Đã có lỗi xảy ra khi đọc hoặc xử lý file. Vui lòng kiểm tra lại định dạng file và dữ liệu.");
         } finally {
-            // Reset file input
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
             }
@@ -254,7 +271,16 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                 className="hidden"
                 accept=".xlsx, .xls, .csv"
             />
-            <ManagementCard title="Tài khoản" onAdd={() => openModal('user', 'add')}>
+            <ManagementCard 
+                title="Tài khoản" 
+                actions={
+                    <div className="flex items-center space-x-2">
+                        <button onClick={handleDownloadTemplate} className="flex items-center gap-1 text-sm text-white bg-cyan-500 px-3 py-1 rounded-md hover:bg-cyan-600"><DownloadIcon/>Tải file mẫu</button>
+                        <button onClick={handleFileImportClick} className="flex items-center gap-1 text-sm text-white bg-green-500 px-3 py-1 rounded-md hover:bg-green-600"><UploadIcon/>Import</button>
+                        <button onClick={() => openModal('user', 'add')} className="flex items-center gap-1 text-sm text-white bg-indigo-500 px-3 py-1 rounded-md hover:bg-indigo-600"><PlusIcon/>Thêm</button>
+                    </div>
+                }
+            >
                 {data.users.map(user => {
                     const isCurrentUser = user.usersId === currentUser.usersId;
                     return (
@@ -271,16 +297,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             <ManagementCard title="Tổ chuyên môn" onAdd={() => openModal('group', 'add')}>
                 {data.groups.map(group => <ItemRow key={group.groupsId} name={group.name} onEdit={() => openModal('group', 'edit', group)} onDelete={() => handlers.groupHandlers.remove(group.groupsId)}/>)}
             </ManagementCard>
-             <ManagementCard 
-                title="Giáo viên" 
-                onAdd={() => alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.")}
-                actions={
-                    <div className="flex items-center space-x-2">
-                        <button onClick={handleFileImportClick} className="flex items-center gap-1 text-sm text-white bg-green-500 px-3 py-1 rounded-md hover:bg-green-600"><UploadIcon/>Import</button>
-                        <button onClick={() => alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.")} className="flex items-center gap-1 text-sm text-white bg-indigo-500 px-3 py-1 rounded-md hover:bg-indigo-600"><PlusIcon/>Thêm</button>
-                    </div>
-                }
-             >
+             <ManagementCard title="Giáo viên">
                 <div className="mb-4">
                     <label htmlFor="group-filter" className="block text-sm font-medium text-gray-700">Lọc theo tổ</label>
                     <select
