@@ -17,23 +17,23 @@ interface GroupReportViewProps {
 
 export const GroupReportView: React.FC<GroupReportViewProps> = ({ currentUser, data, initialActivityId, resetInitialActivityId }) => {
   const { activities, teachers, participationRecords, academicYears } = data;
-  const [selectedYear, setSelectedYear] = useState<string>(academicYears.length > 0 ? academicYears[0].id : '');
+  const [selectedYear, setSelectedYear] = useState<string>(academicYears.length > 0 ? academicYears[0].academicYearsId : '');
   const [selectedActivity, setSelectedActivity] = useState<string>('all');
   
   const groupTeachers = useMemo(() => {
-    return teachers.filter(t => t.groupId === currentUser.groupId);
-  }, [currentUser.groupId, teachers]);
+    return teachers.filter(t => t.groupsId === currentUser.groupsId);
+  }, [currentUser.groupsId, teachers]);
 
   const filteredActivities = useMemo(() => {
-    return activities.filter(a => a.academicYearId === selectedYear);
+    return activities.filter(a => a.academicYearsId === selectedYear);
   }, [selectedYear, activities]);
 
   useEffect(() => {
     if (initialActivityId && activities.length > 0) {
-      const activityToSelect = activities.find(a => a.id === initialActivityId);
+      const activityToSelect = activities.find(a => a.activitiesId === initialActivityId);
       if (activityToSelect) {
-        setSelectedYear(activityToSelect.academicYearId);
-        setSelectedActivity(activityToSelect.id);
+        setSelectedYear(activityToSelect.academicYearsId);
+        setSelectedActivity(activityToSelect.activitiesId);
       }
       if (resetInitialActivityId) {
         resetInitialActivityId();
@@ -42,12 +42,12 @@ export const GroupReportView: React.FC<GroupReportViewProps> = ({ currentUser, d
   }, [initialActivityId, activities, resetInitialActivityId]);
 
   const reportData = useMemo(() => {
-    const groupTeacherIds = new Set(groupTeachers.map(t => t.id));
+    const groupTeacherIds = new Set(groupTeachers.map(t => t.usersId));
     
     if (selectedActivity === 'all') {
         const summary: Record<string, Record<ParticipationStatus, number> & { name: string }> = {};
         groupTeachers.forEach(teacher => {
-            summary[teacher.id] = {
+            summary[teacher.usersId] = {
                 name: teacher.name,
                 [ParticipationStatus.ORGANIZER]: 0,
                 [ParticipationStatus.PARTICIPATED]: 0,
@@ -58,19 +58,19 @@ export const GroupReportView: React.FC<GroupReportViewProps> = ({ currentUser, d
         });
 
         participationRecords
-            .filter(pr => groupTeacherIds.has(pr.teacherId) && filteredActivities.some(act => act.id === pr.activityId))
+            .filter(pr => groupTeacherIds.has(pr.teacherUsersId) && filteredActivities.some(act => act.activitiesId === pr.activitiesId))
             .forEach(pr => {
-                if (summary[pr.teacherId]) {
-                    summary[pr.teacherId][pr.status]++;
+                if (summary[pr.teacherUsersId]) {
+                    summary[pr.teacherUsersId][pr.status]++;
                 }
             });
         
         return Object.values(summary);
     } else {
         return participationRecords
-            .filter(pr => groupTeacherIds.has(pr.teacherId) && pr.activityId === selectedActivity)
+            .filter(pr => groupTeacherIds.has(pr.teacherUsersId) && pr.activitiesId === selectedActivity)
             .map(pr => ({
-                teacherName: groupTeachers.find(t => t.id === pr.teacherId)?.name || 'Unknown',
+                teacherName: groupTeachers.find(t => t.usersId === pr.teacherUsersId)?.name || 'Unknown',
                 status: pr.status,
             }));
     }
@@ -82,14 +82,14 @@ export const GroupReportView: React.FC<GroupReportViewProps> = ({ currentUser, d
         <div>
           <label htmlFor="year-select-group" className="block text-sm font-medium text-gray-700 mb-1">Năm học</label>
           <select id="year-select-group" value={selectedYear} onChange={e => {setSelectedYear(e.target.value); setSelectedActivity('all');}} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-            {academicYears.map(year => <option key={year.id} value={year.id}>{year.name}</option>)}
+            {academicYears.map(year => <option key={year.academicYearsId} value={year.academicYearsId}>{year.name}</option>)}
           </select>
         </div>
         <div>
           <label htmlFor="activity-select-group" className="block text-sm font-medium text-gray-700 mb-1">Hoạt động</label>
           <select id="activity-select-group" value={selectedActivity} onChange={e => setSelectedActivity(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
             <option value="all">Thống kê cả năm</option>
-            {filteredActivities.map(act => <option key={act.id} value={act.id}>{act.name}</option>)}
+            {filteredActivities.map(act => <option key={act.activitiesId} value={act.activitiesId}>{act.name}</option>)}
           </select>
         </div>
       </div>

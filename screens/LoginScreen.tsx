@@ -8,7 +8,7 @@ interface LoginScreenProps {
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLogin, loginError }) => {
-  const [selectedUserId, setSelectedUserId] = useState<string>(users.length > 0 ? users[0].id : '');
+  const [selectedUserId, setSelectedUserId] = useState<string>(users[0]?.usersId || '');
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -38,7 +38,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLogin, loginE
               className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
             >
               {users.map(user => (
-                <option key={user.id} value={user.id}>{user.name} ({user.role})</option>
+                <option key={user.usersId} value={user.usersId}>{user.name} ({user.role})</option>
               ))}
             </select>
           </div>

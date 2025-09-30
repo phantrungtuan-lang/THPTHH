@@ -47,9 +47,9 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const newFormData = { ...formData, [e.target.name]: e.target.value };
-        // When role changes to Admin, ensure groupId is cleared.
+        // When role changes to Admin, ensure groupsId is cleared.
         if (e.target.name === 'role' && e.target.value === UserRole.ADMIN) {
-            newFormData.groupId = ''; // Will be converted to null for the DB
+            newFormData.groupsId = ''; // Will be converted to null for the DB
         }
         setFormData(newFormData);
     };
@@ -101,7 +101,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
         if (!selectedGroupId || selectedGroupId === 'all') {
             return data.teachers;
         }
-        return data.teachers.filter(teacher => teacher.groupId === selectedGroupId);
+        return data.teachers.filter(teacher => teacher.groupsId === selectedGroupId);
     }, [data.teachers, selectedGroupId]);
     
     const renderFormFields = () => {
@@ -114,13 +114,13 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                     <InputField name="password" label="Mật khẩu" type="password" value={formData.password || ''} onChange={handleFormChange} placeholder={modal?.mode === 'edit' ? "Để trống nếu không đổi" : ""} required={modal?.mode === 'add'}/>
                     <SelectField name="role" label="Vai trò" value={formData.role || ''} onChange={handleFormChange} options={Object.values(UserRole).map(r => ({value: r, label: r}))} required/>
                     {(formData.role === UserRole.TEACHER || formData.role === UserRole.GROUP_LEADER) &&
-                      <SelectField name="groupId" label="Tổ chuyên môn" value={formData.groupId || ''} onChange={handleFormChange} options={data.groups.map(g => ({value: g.id, label: g.name}))}/>
+                      <SelectField name="groupsId" label="Tổ chuyên môn" value={formData.groupsId || ''} onChange={handleFormChange} options={data.groups.map(g => ({value: g.groupsId, label: g.name}))}/>
                     }
                 </>;
             case 'group':
                  return <>
                     <InputField name="name" label="Tên tổ" value={formData.name || ''} onChange={handleFormChange} required/>
-                    <SelectField name="leaderId" label="Tổ trưởng" value={formData.leaderId || ''} onChange={handleFormChange} options={data.users.filter(u => u.role === UserRole.TEACHER || u.role === UserRole.GROUP_LEADER).map(t => ({value: t.id, label: t.name}))}/>
+                    <SelectField name="leaderUsersId" label="Tổ trưởng" value={formData.leaderUsersId || ''} onChange={handleFormChange} options={data.users.filter(u => u.role === UserRole.TEACHER || u.role === UserRole.GROUP_LEADER).map(t => ({value: t.usersId, label: t.name}))}/>
                  </>;
             // "teacher" form is handled by "user" form now.
             case 'teacher': 
@@ -131,7 +131,7 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                  return <>
                     <InputField name="name" label="Tên hoạt động" value={formData.name || ''} onChange={handleFormChange} required/>
                     <InputField name="date" label="Ngày" type="date" value={formData.date || ''} onChange={handleFormChange} required/>
-                    <SelectField name="academicYearId" label="Năm học" value={formData.academicYearId || ''} onChange={handleFormChange} options={data.academicYears.map(y => ({value: y.id, label: y.name}))} required/>
+                    <SelectField name="academicYearsId" label="Năm học" value={formData.academicYearsId || ''} onChange={handleFormChange} options={data.academicYears.map(y => ({value: y.academicYearsId, label: y.name}))} required/>
                  </>;
             default: return null;
         }
@@ -161,20 +161,20 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
             {renderModalContent()}
             <ManagementCard title="Tài khoản" onAdd={() => openModal('user', 'add')}>
                 {data.users.map(user => {
-                    const isCurrentUser = user.id === currentUser.id;
+                    const isCurrentUser = user.usersId === currentUser.usersId;
                     return (
                         <ItemRow 
-                            key={user.id} 
+                            key={user.usersId} 
                             name={`${user.name} (${user.role})`} 
                             onEdit={() => openModal('user', 'edit', user)} 
-                            onDelete={!isCurrentUser ? () => handlers.userHandlers.remove(user.id) : undefined}
+                            onDelete={!isCurrentUser ? () => handlers.userHandlers.remove(user.usersId) : undefined}
                             onResetPassword={!isCurrentUser ? () => handlers.requestPasswordReset(user) : undefined}
                         />
                     );
                 })}
             </ManagementCard>
             <ManagementCard title="Tổ chuyên môn" onAdd={() => openModal('group', 'add')}>
-                {data.groups.map(group => <ItemRow key={group.id} name={group.name} onEdit={() => openModal('group', 'edit', group)} onDelete={() => handlers.groupHandlers.remove(group.id)}/>)}
+                {data.groups.map(group => <ItemRow key={group.groupsId} name={group.name} onEdit={() => openModal('group', 'edit', group)} onDelete={() => handlers.groupHandlers.remove(group.groupsId)}/>)}
             </ManagementCard>
              <ManagementCard title="Giáo viên" onAdd={() => alert("Vui lòng thêm giáo viên thông qua mục 'Tài khoản' để đảm bảo dữ liệu đồng bộ.")}>
                 <div className="mb-4">
@@ -187,25 +187,25 @@ export const ManagementView: React.FC<ManagementViewProps> = ({ currentUser, dat
                     >
                         <option value="all">Tất cả các tổ</option>
                         {data.groups.map(group => (
-                            <option key={group.id} value={group.id}>{group.name}</option>
+                            <option key={group.groupsId} value={group.groupsId}>{group.name}</option>
                         ))}
                     </select>
                 </div>
                 {filteredTeachers.map(teacher => {
-                    const user = data.users.find(u => u.id === teacher.id);
+                    const user = data.users.find(u => u.usersId === teacher.usersId);
                     return <ItemRow 
-                        key={teacher.id} 
+                        key={teacher.usersId} 
                         name={teacher.name} 
                         onEdit={user ? () => openModal('user', 'edit', user) : undefined} 
-                        onDelete={user ? () => handlers.teacherHandlers.remove(teacher.id) : undefined}
+                        onDelete={user ? () => handlers.teacherHandlers.remove(teacher.usersId) : undefined}
                     />
                 })}
             </ManagementCard>
             <ManagementCard title="Năm học" onAdd={() => openModal('year', 'add')}>
-                {data.academicYears.map(year => <ItemRow key={year.id} name={year.name} onEdit={() => openModal('year', 'edit', year)} onDelete={() => handlers.academicYearHandlers.remove(year.id)}/>)}
+                {data.academicYears.map(year => <ItemRow key={year.academicYearsId} name={year.name} onEdit={() => openModal('year', 'edit', year)} onDelete={() => handlers.academicYearHandlers.remove(year.academicYearsId)}/>)}
             </ManagementCard>
             <ManagementCard title="Hoạt động" onAdd={() => openModal('activity', 'add')}>
-                 {data.activities.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(activity => <ItemRow key={activity.id} name={`${activity.name} - ${new Date(activity.date).toLocaleDateString('vi-VN')}`} onEdit={() => openModal('activity', 'edit', activity)} onDelete={() => handlers.activityHandlers.remove(activity.id)}/>)}
+                 {data.activities.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(activity => <ItemRow key={activity.activitiesId} name={`${activity.name} - ${new Date(activity.date).toLocaleDateString('vi-VN')}`} onEdit={() => openModal('activity', 'edit', activity)} onDelete={() => handlers.activityHandlers.remove(activity.activitiesId)}/>)}
             </ManagementCard>
         </div>
     );

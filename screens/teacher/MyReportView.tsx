@@ -18,10 +18,10 @@ export const MyReportView: React.FC<MyReportViewProps> = ({ currentUser, data })
   
   const myParticipation = useMemo(() => {
     return participationRecords
-      .filter(pr => pr.teacherId === currentUser.id)
+      .filter(pr => pr.teacherUsersId === currentUser.usersId)
       .map(pr => {
-        const activity = activities.find(a => a.id === pr.activityId);
-        const academicYear = academicYears.find(ay => ay.id === activity?.academicYearId);
+        const activity = activities.find(a => a.activitiesId === pr.activitiesId);
+        const academicYear = academicYears.find(ay => ay.academicYearsId === activity?.academicYearsId);
         return {
           ...pr,
           activityName: activity?.name || 'Unknown Activity',
@@ -35,7 +35,7 @@ export const MyReportView: React.FC<MyReportViewProps> = ({ currentUser, data })
         const dateB = b.activityDateRaw ? new Date(b.activityDateRaw).getTime() : 0;
         return dateB - dateA;
       });
-  }, [currentUser.id, participationRecords, activities, academicYears]);
+  }, [currentUser.usersId, participationRecords, activities, academicYears]);
 
   return (
     <Card title={`Báo cáo tham gia hoạt động của ${currentUser.name}`}>
@@ -51,7 +51,7 @@ export const MyReportView: React.FC<MyReportViewProps> = ({ currentUser, data })
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
                 {myParticipation.length > 0 ? myParticipation.map(record => (
-                    <tr key={record.id} className="hover:bg-gray-50">
+                    <tr key={record.participationRecordsId} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.academicYearName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{record.activityName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.activityDate}</td>

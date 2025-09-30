@@ -14,41 +14,42 @@ export enum ParticipationStatus {
 }
 
 export interface User {
-  id: string;
+  usersId: string;
   name: string;
   email: string;
   role: UserRole;
   password: string;
-  groupId?: string; // For Group Leaders and Teachers
+  groupsId?: string; 
 }
 
 export interface AcademicYear {
-  id: string;
+  academicYearsId: string;
   name: string;
 }
 
 export interface Group {
-  id: string;
+  groupsId: string;
   name: string;
-  leaderId: string;
+  leaderUsersId?: string;
 }
 
+// This is a derived type for display purposes
 export interface Teacher {
-  id: string;
+  usersId: string;
   name: string;
-  groupId: string;
+  groupsId: string;
 }
 
 export interface Activity {
-  id: string;
+  activitiesId: string;
   name: string;
   date: string; // ISO string
-  academicYearId: string;
+  academicYearsId: string;
 }
 
 export interface ParticipationRecord {
-  id: string;
-  teacherId: string;
-  activityId: string;
+  participationRecordsId: string;
+  teacherUsersId: string;
+  activitiesId: string;
   status: ParticipationStatus;
 }

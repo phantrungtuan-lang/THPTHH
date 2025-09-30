@@ -30,7 +30,7 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ isOpen
     }
     
     setIsSaving(true);
-    const result = await onSubmit(user.id, newPassword);
+    const result = await onSubmit(user.usersId, newPassword);
     setIsSaving(false);
     
     if (result.success) {

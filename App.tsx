@@ -78,7 +78,7 @@ const App: React.FC = () => {
   
   const handleLogin = async (userId: string, password: string): Promise<boolean> => {
       setLoginError(null);
-      const userToLogin = users.find(u => u.id === userId);
+      const userToLogin = users.find(u => u.usersId === userId);
       
       if (userToLogin && userToLogin.password === password) {
           setCurrentUser(userToLogin);
@@ -108,13 +108,16 @@ const App: React.FC = () => {
   // Handlers
   const handlePasswordChange = async (userId: string, newPassword: string): Promise<{ success: boolean, message?: string }> => {
       try {
-          await api.updateUser(userId, { password: newPassword });
-          // We need to refresh the local state
-          const newUsers = users.map(u => u.id === userId ? { ...u, password: newPassword } : u);
-          setUsers(newUsers);
-          // If the current user changed their own password, update the currentUser object
-          if (currentUser?.id === userId) {
-            setCurrentUser({ ...currentUser, password: newPassword });
+          const userToUpdate = users.find(u => u.usersId === userId);
+          if (!userToUpdate) throw new Error("User not found");
+          
+          const updatedUser = { ...userToUpdate, password: newPassword };
+          await api.updateUser(updatedUser);
+          
+          setUsers(users.map(u => u.usersId === userId ? updatedUser : u));
+
+          if (currentUser?.usersId === userId) {
+            setCurrentUser(updatedUser);
           }
           return { success: true };
       } catch (error: any) {
@@ -126,65 +129,62 @@ const App: React.FC = () => {
   const closePasswordModal = () => setPasswordModal({ isOpen: false, user: null, mode: 'change' });
 
   // Generic handler creator
-  const createHandlers = <T extends {id: string}>(
+  const createHandlers = <T extends Record<string, any>>(
     tableName: string,
     state: T[],
     setter: React.Dispatch<React.SetStateAction<T[]>>,
+    primaryKey: keyof T,
   ) => ({
-      add: async (item: Omit<T, 'id'>) => {
+      add: async (item: Omit<T, keyof T>) => {
           const newItem = await api.add<T>(tableName, item);
           setter([...state, newItem]);
           return newItem;
       },
       update: async (updatedItem: T) => {
-          // Destructure to separate id from the rest of the payload.
-          // This is crucial as the primary key should not be in the update payload.
-          const { id, ...updatePayload } = updatedItem;
-          await api.update<T>(tableName, id, updatePayload as Partial<T>);
-          setter(state.map(item => item.id === updatedItem.id ? updatedItem : item));
+          await api.update<T>(tableName, updatedItem);
+          setter(state.map(item => item[primaryKey] === updatedItem[primaryKey] ? updatedItem : item));
       },
       remove: async (id: string) => {
           await api.remove(tableName, id);
-          setter(state.filter(item => item.id !== id));
+          setter(state.filter(item => item[primaryKey] !== id));
       },
   });
 
-  const getTeachersFromUsers = (currentUsers: User[]) => {
+  const getTeachersFromUsers = (currentUsers: User[]): Teacher[] => {
       return currentUsers
         .filter(u => u.role === UserRole.TEACHER || u.role === UserRole.GROUP_LEADER)
-        .map(u => ({ id: u.id, name: u.name, groupId: u.groupId || '' }));
+        .map(u => ({ usersId: u.usersId, name: u.name, groupsId: u.groupsId || '' }));
   };
 
   // Specific handlers with cascading logic
   const userHandlers = {
-      add: async (item: Omit<User, 'id' | 'password'> & {password?: string}) => {
+      add: async (item: Omit<User, 'usersId' | 'password'> & {password?: string}) => {
           const newUser = await api.addUser({ ...item, password: item.password || '123' });
           setUsers([...users, newUser]);
           return newUser;
       },
       update: async (updatedItem: User) => {
-        const originalUser = users.find(u => u.id === updatedItem.id);
+        const originalUser = users.find(u => u.usersId === updatedItem.usersId);
         if (!originalUser) return;
 
         const finalUpdatedItem = {
             ...updatedItem,
             password: updatedItem.password ? updatedItem.password : originalUser.password,
         };
-
-        const { id, ...updatePayload } = finalUpdatedItem;
-        await api.updateUser(id, updatePayload);
         
-        setUsers(users.map(user => user.id === updatedItem.id ? finalUpdatedItem : user));
+        await api.updateUser(finalUpdatedItem);
+        
+        setUsers(users.map(user => user.usersId === updatedItem.usersId ? finalUpdatedItem : user));
       },
       remove: async (id: string) => {
         await api.removeUser(id);
-        setUsers(users.filter(u => u.id !== id));
+        setUsers(users.filter(u => u.usersId !== id));
       }
   };
   
-  const activityHandlers = createHandlers('activities', activities, setActivities);
-  const academicYearHandlers = createHandlers('academic_years', academicYears, setAcademicYears);
-  const groupHandlers = createHandlers('groups', groups, setGroups);
+  const activityHandlers = createHandlers('activities', activities, setActivities, 'activitiesId');
+  const academicYearHandlers = createHandlers('academic_years', academicYears, setAcademicYears, 'academicYearsId');
+  const groupHandlers = createHandlers('groups', groups, setGroups, 'groupsId');
   
   const teacherHandlers = {
       update: userHandlers.update,
@@ -192,7 +192,7 @@ const App: React.FC = () => {
   };
 
   const participationRecordHandlers = {
-      updateBatch: async (activityId: string, newRecordsForActivity: Omit<ParticipationRecord, 'id'>[]) => {
+      updateBatch: async (activityId: string, newRecordsForActivity: Omit<ParticipationRecord, 'participationRecordsId'>[]) => {
           await api.updateParticipationBatch(activityId, newRecordsForActivity);
           const loadedParticipationRecords = await api.getParticipationRecords();
           setParticipationRecords(loadedParticipationRecords);

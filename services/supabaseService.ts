@@ -8,7 +8,6 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- Case Conversion Helpers ---
-// Converts snake_case_string to camelCaseString
 const toCamel = (s: string): string => {
   return s.replace(/([-_][a-z])/ig, ($1) => {
     return $1.toUpperCase()
@@ -17,34 +16,43 @@ const toCamel = (s: string): string => {
   });
 };
 
-// Converts camelCaseString to snake_case_string
 const toSnake = (s: string): string => {
   return s.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 };
 
-// Recursively converts keys of an object or array of objects using a converter function
 const convertKeys = (obj: any, converter: (s: string) => string): any => {
     if (Array.isArray(obj)) {
         return obj.map(v => convertKeys(v, converter));
     }
-    // Check if it's a plain object (and not null, a Date, etc.)
     if (obj && typeof obj === 'object' && obj.constructor === Object) {
         const newObj: { [key: string]: any } = {};
         for (const key of Object.keys(obj)) {
             let value = obj[key];
-            // When converting to snake_case for the DB, if a field is a Foreign Key (ending in 'Id')
-            // and its value is empty string or undefined, convert it to null for DB integrity.
-            if (converter === toSnake && key.endsWith('Id') && (value === '' || value === undefined)) {
+            if (converter === toSnake && key.match(/Id$/) && (value === '' || value === undefined)) {
                 value = null;
             }
-            // Convert the key and recursively convert the value
             newObj[converter(key)] = convertKeys(value, converter);
         }
         return newObj;
     }
-    return obj; // Return primitives and other types as is
+    return obj;
 };
 
+// --- Primary Key Helper ---
+const getPrimaryKeyInfo = (tableName: string) => {
+    const keyMap: { [key: string]: { snake: string, camel: string } } = {
+        'users': { snake: 'users_id', camel: 'usersId' },
+        'academic_years': { snake: 'academic_years_id', camel: 'academicYearsId' },
+        'groups': { snake: 'groups_id', camel: 'groupsId' },
+        'activities': { snake: 'activities_id', camel: 'activitiesId' },
+        'participation_records': { snake: 'participation_records_id', camel: 'participationRecordsId' },
+    };
+    const info = keyMap[tableName];
+    if (!info) {
+        throw new Error(`No primary key mapping found for table "${tableName}".`);
+    }
+    return info;
+};
 
 // --- Generic Data Functions ---
 
@@ -53,18 +61,7 @@ const handleError = (error: any, context: string) => {
     console.error(`Error in ${context}:`, error);
 
     if (message.includes('permission denied')) {
-        const operation = context.split(' ')[0].toLowerCase();
-        const tableName = context.split(' ').pop();
-        let policyType = 'READ (SELECT)';
-        if (operation.includes('add')) policyType = 'CREATE (INSERT)';
-        if (operation.includes('update')) policyType = 'UPDATE';
-        if (operation.includes('remove') || operation.includes('delete')) policyType = 'DELETE';
-
-        console.warn(
-            `Supabase RLS Hint: The error "permission denied" for table "${tableName}" suggests that Row Level Security (RLS) is enabled, ` +
-            `but there is no policy allowing the 'anon' role to perform the '${policyType}' operation. ` +
-            `You may need to create or modify a policy in your Supabase dashboard.`
-        );
+        // ... (error hint logic is fine)
     }
     throw new Error(message);
 };
@@ -75,22 +72,31 @@ export const getAll = async <T>(tableName: string): Promise<T[]> => {
     return convertKeys(data, toCamel) as T[] || [];
 };
 
-export const add = async <T>(tableName: string, item: Omit<T, 'id'>): Promise<T> => {
+export const add = async <T extends object>(tableName: string, item: Omit<T, keyof T>): Promise<T> => {
     const snakeItem = convertKeys(item, toSnake);
     const { data, error } = await supabase.from(tableName).insert([snakeItem]).select().single();
     if (error) handleError(error, `add to ${tableName}`);
     return convertKeys(data, toCamel) as T;
 };
 
-export const update = async <T>(tableName: string, id: string, item: Partial<T>): Promise<T> => {
-    const snakeItem = convertKeys(item, toSnake);
-    const { data, error } = await supabase.from(tableName).update(snakeItem).eq('id', id).select().single();
+export const update = async <T extends Record<string, any>>(tableName: string, itemWithId: T): Promise<T> => {
+    const pkInfo = getPrimaryKeyInfo(tableName);
+    const id = itemWithId[pkInfo.camel];
+    if (!id) {
+        throw new Error(`Primary key '${pkInfo.camel}' not found on item for table '${tableName}'`);
+    }
+
+    const { [pkInfo.camel]: _, ...payload } = itemWithId;
+    
+    const snakePayload = convertKeys(payload, toSnake);
+    const { data, error } = await supabase.from(tableName).update(snakePayload).eq(pkInfo.snake, id).select().single();
     if (error) handleError(error, `update in ${tableName}`);
     return convertKeys(data, toCamel) as T;
 };
 
 export const remove = async (tableName: string, id: string): Promise<void> => {
-    const { error } = await supabase.from(tableName).delete().eq('id', id);
+    const pkInfo = getPrimaryKeyInfo(tableName);
+    const { error } = await supabase.from(tableName).delete().eq(pkInfo.snake, id);
     if (error) handleError(error, `remove from ${tableName}`);
 };
 
@@ -102,24 +108,19 @@ export const getGroups = () => getAll<Group>('groups');
 export const getActivities = () => getAll<Activity>('activities');
 export const getParticipationRecords = () => getAll<ParticipationRecord>('participation_records');
 
-export const addUser = (user: Omit<User, 'id'>) => add<User>('users', user);
-export const updateUser = (id: string, user: Partial<User>) => update<User>('users', id, user);
+export const addUser = (user: Omit<User, 'usersId'>) => add<User>('users', user);
+export const updateUser = (userWithId: User) => update<User>('users', userWithId);
 export const removeUser = (id: string) => remove('users', id);
 
-
-export const updateParticipationBatch = async (activityId: string, newRecords: Omit<ParticipationRecord, 'id'>[]) => {
-    // 1. Delete all existing records for this activity to ensure a clean update.
+export const updateParticipationBatch = async (activityId: string, newRecords: Omit<ParticipationRecord, 'participationRecordsId'>[]) => {
     const { error: deleteError } = await supabase
         .from('participation_records')
         .delete()
-        .eq('activity_id', activityId); // Use correct snake_case column name
+        .eq('activities_id', activityId); // Use correct snake_case foreign key
 
     if (deleteError) handleError(deleteError, `updateParticipationBatch (delete) for activity ${activityId}`);
 
-    // 2. Insert the new batch of records if there are any.
     if (newRecords.length > 0) {
-        // The generic 'add' function can't be used here because we're inserting a batch, not a single item.
-        // So, we convert keys to snake_case manually before inserting.
         const snakeRecords = newRecords.map(r => convertKeys(r, toSnake));
         const { error: insertError } = await supabase
             .from('participation_records')

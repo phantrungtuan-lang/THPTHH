@@ -19,23 +19,23 @@ type StatusMap = Record<string, ParticipationStatus>;
 
 export const ReportParticipationView: React.FC<ReportParticipationViewProps> = ({ currentUser, data, handlers, onReportSaved }) => {
   const { activities, teachers, participationRecords } = data;
-  const [selectedActivityId, setSelectedActivityId] = useState<string>(activities.length > 0 ? activities[0].id : '');
+  const [selectedActivityId, setSelectedActivityId] = useState<string>(activities.length > 0 ? activities[0].activitiesId : '');
   const [isSaving, setIsSaving] = useState(false);
   
   const groupTeachers = useMemo(() => {
-    return teachers.filter(t => t.groupId === currentUser.groupId);
-  }, [currentUser.groupId, teachers]);
+    return teachers.filter(t => t.groupsId === currentUser.groupsId);
+  }, [currentUser.groupsId, teachers]);
 
   const [statuses, setStatuses] = useState<StatusMap>({});
 
   useEffect(() => {
     if (selectedActivityId) {
         const initialStatuses: StatusMap = {};
-        const existingRecords = participationRecords.filter(pr => pr.activityId === selectedActivityId);
+        const existingRecords = participationRecords.filter(pr => pr.activitiesId === selectedActivityId);
 
         groupTeachers.forEach(teacher => {
-            const record = existingRecords.find(pr => pr.teacherId === teacher.id);
-            initialStatuses[teacher.id] = record ? record.status : ParticipationStatus.PARTICIPATED;
+            const record = existingRecords.find(pr => pr.teacherUsersId === teacher.usersId);
+            initialStatuses[teacher.usersId] = record ? record.status : ParticipationStatus.PARTICIPATED;
         });
         setStatuses(initialStatuses);
     }
@@ -49,10 +49,10 @@ export const ReportParticipationView: React.FC<ReportParticipationViewProps> = (
     if (isSaving) return;
     setIsSaving(true);
     
-    // Prepare records without the 'id' field, as Supabase will generate it.
-    const newRecords: Omit<ParticipationRecord, 'id'>[] = Object.entries(statuses).map(([teacherId, status]) => ({
-        teacherId,
-        activityId: selectedActivityId,
+    // Prepare records without the PK field, as Supabase will generate it.
+    const newRecords = Object.entries(statuses).map(([teacherId, status]) => ({
+        teacherUsersId: teacherId,
+        activitiesId: selectedActivityId,
         status,
     }));
     
@@ -74,18 +74,18 @@ export const ReportParticipationView: React.FC<ReportParticipationViewProps> = (
         <label htmlFor="activity-select-leader" className="block text-sm font-medium text-gray-700 mb-1">Chọn hoạt động</label>
         <select id="activity-select-leader" value={selectedActivityId} onChange={e => setSelectedActivityId(e.target.value)} className="mt-1 block w-full md:w-1/2 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
           {activities.map(act => (
-            <option key={act.id} value={act.id}>{act.name} - {new Date(act.date).toLocaleDateString('vi-VN')}</option>
+            <option key={act.activitiesId} value={act.activitiesId}>{act.name} - {new Date(act.date).toLocaleDateString('vi-VN')}</option>
           ))}
         </select>
       </div>
       
       <div className="space-y-4">
         {groupTeachers.map(teacher => (
-            <div key={teacher.id} className="grid grid-cols-1 md:grid-cols-2 items-center gap-4 p-3 bg-gray-50 rounded-lg">
+            <div key={teacher.usersId} className="grid grid-cols-1 md:grid-cols-2 items-center gap-4 p-3 bg-gray-50 rounded-lg">
                 <p className="font-medium text-gray-800">{teacher.name}</p>
                 <select 
-                    value={statuses[teacher.id] || ''}
-                    onChange={e => handleStatusChange(teacher.id, e.target.value as ParticipationStatus)}
+                    value={statuses[teacher.usersId] || ''}
+                    onChange={e => handleStatusChange(teacher.usersId, e.target.value as ParticipationStatus)}
                     className="w-full mt-1 md:mt-0 block pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
                 >
                     {Object.values(ParticipationStatus).map(status => (
